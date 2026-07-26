@@ -160,9 +160,8 @@ Play a fixture with no token and no spend:
 adb shell am start -n com.xtv.app/.MainActivity --es fixture dead_links.json
 ```
 
-`docs/DECISION.md` records why this is built on the official API rather than the reverse-engineered
-web endpoints, with the measurements behind it. `docs/research/` has the long form, including the
-rejected paths.
+`docs/research/` records why this is built on the official API rather than the reverse-engineered web
+endpoints, including the paths that were investigated and rejected.
 
 ## Licence
 
