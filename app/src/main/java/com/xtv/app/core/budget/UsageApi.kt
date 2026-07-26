@@ -1,5 +1,9 @@
 package com.xtv.app.core.budget
 
+import com.xtv.app.core.diag.Diagnostics
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -11,7 +15,7 @@ import okhttp3.Request
 /**
  * X's own consumption meter — the authoritative alternative to counting locally.
  *
- * `GET /2/usage/tweets` reports `tweets_consumed` per day plus the monthly `project_cap`. It does
+ * `GET /2/usage/tweets` returns a flat `data.project_usage` count for the current cap period. It does
  * **not** report money: X publishes no billing, balance, or credits endpoint, so dollars are still
  * derived by multiplying by the published per-post price. What this buys is that the *count* comes
  * from X rather than from our own tally, which catches any drift between the two — X dedupes repeat
@@ -19,12 +23,20 @@ import okhttp3.Request
  *
  * Requires **app-only** auth: an OAuth 2.0 user token is rejected outright with
  * `unsupported-authentication`. The bearer for that is the one shown on the app's Keys and tokens
- * page, which is a different credential from the OAuth 2.0 client id/secret. It is optional — with
- * no bearer the app falls back to its local estimate and says so.
+ * page, which is a different credential from the OAuth 2.0 client id/secret.
  */
 object UsageApi {
 
-    private val client = OkHttpClient()
+    /**
+     * Short timeouts on purpose. The home screen no longer waits for this call, but a stalled socket
+     * behind a captive portal would still hold a slot for 20s on OkHttp's defaults, and a spend
+     * figure that arrives late is worth nothing.
+     */
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(3, TimeUnit.SECONDS)
+        .build()
+
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
@@ -37,10 +49,16 @@ object UsageApi {
      *    on the 1st. So this figure and a calendar-month tally count different windows.
      *
      * It is also *project*-wide: anything else using the same credentials — a script, a CLI — is
-     * included. That makes it the real bill rather than this app's share of it, which is the point.
+     * included. That makes it the real bill rather than this app's share of it, which is the point,
+     * but it is also why it must never drive the local spending ceiling. See [SpendGuard.State].
+     *
+     * Failures are recorded to [Diagnostics] rather than swallowed. With the bearer now mandatory,
+     * the likeliest fault is a *present but wrong* one — the token's literal `%2F` and `%3D` invite
+     * URL-decoding, which yields a 401 — and that passes every presence check the app can make. An
+     * unexplained fall back to the estimate wording would be the only symptom.
      */
     suspend fun postsThisPeriod(appOnlyBearer: String): Usage? = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val request = Request.Builder()
                 .url("https://api.x.com/2/usage/tweets")
                 // The bearer from the console contains literal '%2F' / '%3D' characters. They are
@@ -48,7 +66,10 @@ object UsageApi {
                 .header("Authorization", "Bearer $appOnlyBearer")
                 .build()
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
+                if (!response.isSuccessful) {
+                    Diagnostics.record("usage", "HTTP ${response.code} — spend figure is an estimate")
+                    return@use null
+                }
                 val data = json.parseToJsonElement(response.body?.string().orEmpty())
                     .jsonObject["data"]?.jsonObject ?: return@use null
                 val used = data["project_usage"]?.jsonPrimitive?.content?.toIntOrNull()
@@ -56,10 +77,21 @@ object UsageApi {
                 Usage(
                     posts = used,
                     capPosts = data["project_cap"]?.jsonPrimitive?.content?.toIntOrNull(),
-                    resetDay = data["cap_reset_day"]?.jsonPrimitive?.content?.toIntOrNull(),
+                    // A day outside 1..31 would render as "the 0th". Treat it as absent instead.
+                    resetDay = data["cap_reset_day"]?.jsonPrimitive?.content?.toIntOrNull()
+                        ?.takeIf { it in 1..31 },
                 )
             }
-        }.getOrNull()
+        } catch (e: CancellationException) {
+            // Leaving the screen is not a usage failure; let it cancel.
+            throw e
+        } catch (e: IOException) {
+            Diagnostics.record("usage", "unreachable (${e.javaClass.simpleName})")
+            null
+        } catch (e: Exception) {
+            Diagnostics.record("usage", "unreadable response (${e.javaClass.simpleName})")
+            null
+        }
     }
 
     data class Usage(val posts: Int, val capPosts: Int?, val resetDay: Int?)

@@ -28,6 +28,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.xtv.app.R
+import com.xtv.app.core.budget.Ordinals
+import com.xtv.app.core.budget.SpendGuard
 import androidx.tv.material3.Button
 import androidx.tv.material3.Card
 import androidx.tv.material3.MaterialTheme
@@ -48,7 +50,7 @@ enum class ReelSize(val labelRes: Int, val posts: Int) {
     LONG(R.string.size_long, 100);
 
     val estimatedItems: Int get() = (posts * 0.6).toInt()
-    val maxCostUsd: Double get() = posts * 0.005
+    val maxCostUsd: Double get() = posts * SpendGuard.PRICE_PER_POST
 }
 
 data class HomeState(
@@ -56,9 +58,12 @@ data class HomeState(
     val resumeTotal: Int?,
     val spentText: String,
     val capText: String,
+    /** Against the **local** monthly tally, never X's project-wide figure. See [SpendGuard.State]. */
     val budgetExceeded: Boolean,
     /** True when the spend figure came from X's usage meter rather than the local tally. */
     val spendAuthoritative: Boolean = false,
+    /** Day X's period rolls over on. Only ever set alongside [spendAuthoritative]. */
+    val resetDay: Int? = null,
     val note: String? = null,
 )
 
@@ -158,9 +163,21 @@ fun HomeScreen(
                 }
                 // Only the money spent. The ceiling is a tripwire, not a goal, so it stays out of
                 // sight until it actually fires — a permanent "x / 20" invites treating 20 as a target.
+                //
+                // The two wordings are not decoration. X's figure covers X's own period, ending on
+                // `cap_reset_day`; the fallback covers a calendar month. Presenting either in the
+                // other's sentence would state a number over a window it was never measured across.
+                val resetOn = state.resetDay?.let {
+                    Ordinals.dayOfMonth(it, stringResource(R.string.ordinal_style))
+                }
                 Text(
-                    stringResource(R.string.home_spend, state.spentText) +
-                        if (state.spendAuthoritative) "" else "  (${stringResource(R.string.home_spend_note)})",
+                    when {
+                        state.spendAuthoritative && resetOn != null ->
+                            stringResource(R.string.home_spend_period_reset, state.spentText, resetOn)
+                        state.spendAuthoritative ->
+                            stringResource(R.string.home_spend_period, state.spentText)
+                        else -> stringResource(R.string.home_spend_estimate, state.spentText)
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     color = Color.White.copy(alpha = 0.45f),
                 )
@@ -221,7 +238,7 @@ private fun SizeCard(size: ReelSize, enabled: Boolean, onClick: () -> Unit, modi
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                stringResource(R.string.size_cost, "$%.2f".format(size.maxCostUsd)),
+                stringResource(R.string.size_cost, SpendGuard.usd(size.maxCostUsd)),
                 style = MaterialTheme.typography.labelLarge, color = Accent,
             )
         }

@@ -11,10 +11,18 @@
     <string name="home_build_first">Build a reel</string>
     <string name="home_open_grid">See the whole reel</string>
     <string name="home_history">Fetch history</string>
-    <string name="home_spend">Spent this month %1$s</string>
-    <string name="home_spend_note">upper-bound estimate · console.x.com is authoritative</string>
+    <!-- X's meter counts X's own period, ending on cap_reset_day. The estimate counts a calendar
+         month. Two windows, so two sentences — they are never the same number. -->
+    <string name="home_spend_period_reset">%1$s this period · resets on the %2$s</string>
+    <string name="home_spend_period">%1$s this period</string>
+    <string name="home_spend_estimate">%1$s this month · upper-bound estimate · console.x.com is authoritative</string>
+    <!-- "en" gives English ordinals ("the 26th"); anything else prints a bare number and lets the
+         locale's own suffix live in home_spend_period_reset. Keyed to the string set, not the
+         system locale, because a device in an untranslated language resolves these English
+         strings while its locale still reads something else. -->
+    <string name="ordinal_style" translatable="false">en</string>
     <string name="home_budget_exceeded">Monthly limit reached</string>
-    <string name="home_budget_exceeded_body">%1$s spent against a %2$s limit. Raise the limit to keep building reels.</string>
+    <string name="home_budget_exceeded_body">%1$s spent against this app\'s own %2$s limit for the month. It resets when the month does.</string>
     <string name="home_budget_ok">Got it</string>
 
     <!-- Reel sizes -->
@@ -59,6 +67,7 @@
 
     <!-- Setup -->
     <string name="setup_title">Setup needed</string>
-    <string name="setup_body">This install has no X API credentials yet, so it cannot fetch anything. XTV ships without them on purpose: X bills API usage to whoever owns the developer app, so everyone runs it on their own credentials and their own budget.</string>
+    <string name="setup_body">This install has no X API credentials yet, so it cannot fetch anything. XTV ships without them on purpose: X bills API usage to whoever owns the developer app, so everyone runs it on their own credentials and their own budget. All three values below are required.</string>
+    <string name="setup_body_bearer">This install is missing the app-only Bearer Token. XTV reads X\'s own usage meter with it, so the spend figure is X\'s count over X\'s billing period. Without it the app would have to guess, over a calendar month that does not line up with the period you are actually billed for. Re-run the command below with all three values.</string>
     <string name="setup_readme">Full instructions: README.md</string>
 </resources>

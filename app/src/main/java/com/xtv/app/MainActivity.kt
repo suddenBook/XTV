@@ -20,6 +20,8 @@ import com.xtv.app.core.auth.SessionManager
 import com.xtv.app.core.auth.TokenStore
 import com.xtv.app.core.auth.Tokens
 import com.xtv.app.core.budget.SpendGuard
+import com.xtv.app.core.budget.UsageApi
+import com.xtv.app.core.budget.UsageCache
 import com.xtv.app.core.model.MediaItem
 import com.xtv.app.core.model.PageResult
 import com.xtv.app.core.source.ApiV2Source
@@ -43,7 +45,7 @@ class MainActivity : ComponentActivity() {
 
     private sealed interface Screen {
         data object Loading : Screen
-        data object NeedsSetup : Screen
+        data class NeedsSetup(val missing: MissingCredential) : Screen
         data object NeedsLogin : Screen
         data object Home : Screen
         data object Reel : Screen
@@ -73,22 +75,28 @@ class MainActivity : ComponentActivity() {
         // Replays a captured response with no token and no spend.
         val fixtureName = intent?.getStringExtra("fixture")?.takeIf { it.isNotBlank() }
 
-        // Credential injection, for the cases where the on-device consent page is not the way in:
-        //   adb shell am start -n com.xtv.app/.MainActivity --es refresh_token <token>
-        // Same path a CI build uses when a refresh token is baked in, so "installs already signed in"
-        // and this debug hook share one implementation.
-        // Nothing ships inside the APK. X bills the owner of the developer app, so a published
-        // build carrying anyone's client id would spend that person's credits for every user. Both
-        // values arrive over adb at install time and are stored on the device only:
+        // Credential injection. Nothing ships inside the APK: X bills the owner of the developer app,
+        // so a published build carrying anyone's client id would spend that person's credits for every
+        // user. All three arrive over adb and are stored on the device only:
         //   adb shell am start -n com.xtv.app/.MainActivity \
-        //       --es client_id <id> --es refresh_token <token> [--es bearer <app-only bearer>]
-        lifecycleScope.launch {
-            intent?.getStringExtra("client_id")?.takeIf { it.isNotBlank() }
-                ?.let { Credentials.setClientId(this@MainActivity, it) }
-            intent?.getStringExtra("bearer")?.takeIf { it.isNotBlank() }
-                ?.let { Credentials.setAppOnlyBearer(this@MainActivity, it) }
-        }
+        //       --es client_id <id> --es refresh_token <token> --es bearer <app-only bearer>
+        //
+        // Blocking, and before setContent, on purpose — see Credentials.injectBlocking. Launching this
+        // as a coroutine left the write racing the composition's read of the same values.
+        Credentials.injectBlocking(
+            context = this,
+            clientId = intent?.getStringExtra("client_id")?.takeIf { it.isNotBlank() },
+            bearer = intent?.getStringExtra("bearer")?.takeIf { it.isNotBlank() },
+        )
         val injectedRefresh = intent?.getStringExtra("refresh_token")?.takeIf { it.isNotBlank() }
+
+        // Consumed, so drop them. Otherwise the bearer sits in the Intent for the life of the
+        // activity — visible to `dumpsys activity` — and is replayed verbatim if the process is
+        // killed and restored, re-running a token exchange that was already spent.
+        intent?.let { launchIntent ->
+            listOf("client_id", "bearer", "refresh_token").forEach(launchIntent::removeExtra)
+            setIntent(launchIntent)
+        }
 
         setContent {
             XtvTheme {
@@ -97,50 +105,84 @@ class MainActivity : ComponentActivity() {
                 val store = remember { TokenStore(context) }
                 val reelStore = remember { ReelStore(context) }
                 val guard = remember { SpendGuard(context) }
+                val usageCache = remember { UsageCache.shared }
 
                 var screen by remember { mutableStateOf<Screen>(Screen.Loading) }
                 var reel by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
                 var startIndex by remember { mutableIntStateOf(0) }
-                var home by remember { mutableStateOf(HomeState(null, null, "$0.00", "$20.00", false)) }
+                // A fixture run is a playback harness with no credentials behind it, so leaving it must
+                // leave the app. Falling through to Home would be a way past the credential gate.
+                var fixtureRun by remember { mutableStateOf(false) }
 
-                suspend fun refreshHome(note: String? = null) {
-                    val saved = reelStore.loadReel()
-                    // With an app-only bearer configured this is X's own consumption count; without
-                    // one it falls back to the local tally, which is an upper bound.
-                    val spend = guard.stateWithUsage(Credentials.appOnlyBearer(context))
-                    home = HomeState(
-                        resumeRemaining = saved?.remaining,
-                        resumeTotal = saved?.items?.size,
+                // Four independent writers, one derived value. Assembling HomeState by copying the
+                // previous one let a slow usage response overwrite a note written while it was in
+                // flight — "Building…" would vanish mid-build. Disjoint sources make that unsayable.
+                var resume by remember { mutableStateOf<ReelStore.Saved?>(null) }
+                var localSpend by remember {
+                    mutableStateOf(SpendGuard.State(0, 0.0, SpendGuard.DEFAULT_CAP_USD))
+                }
+                var usage by remember { mutableStateOf<UsageApi.Usage?>(null) }
+                var statusNote by remember { mutableStateOf<String?>(null) }
+
+                val home = remember(resume, localSpend, usage, statusNote) {
+                    val spend = localSpend.mergedWith(usage)
+                    HomeState(
+                        resumeRemaining = resume?.remaining,
+                        resumeTotal = resume?.items?.size,
                         spentText = spend.spentText,
                         capText = spend.capText,
                         budgetExceeded = spend.exceeded,
                         spendAuthoritative = spend.authoritative,
-                        note = note,
+                        resetDay = spend.resetDay,
+                        note = statusNote,
                     )
                 }
 
+                /**
+                 * Rebuild the home card from local state. Never blocks on the network.
+                 *
+                 * X's usage meter is fetched alongside and folded in whenever it lands. It used to be
+                 * awaited here, which put a metered HTTP round trip in front of the first frame of
+                 * every launch — and with the bearer now required, that would be every user.
+                 */
+                suspend fun refreshHome(note: String? = null) {
+                    resume = reelStore.loadReel()
+                    localSpend = guard.state()
+                    statusNote = note
+                    scope.launch { usage = usageCache.get(Credentials.appOnlyBearer(context)) }
+                }
+
                 LaunchedEffect(Unit) {
-                    when {
-                        Credentials.clientId(context).isNullOrBlank() -> screen = Screen.NeedsSetup
-                        // A fixture run is for exercising playback: offline, free, straight in.
-                        fixtureName != null -> {
-                            reel = ReelPolicy.buildReel(FixtureSource.load(context, fixtureName))
-                            screen = Screen.Reel
+                    val clientId = Credentials.clientId(context)
+                    val bearer = Credentials.appOnlyBearer(context)
+
+                    // Spend the injected refresh token before deciding, so a provisioning run lands on
+                    // Home rather than the consent page it just made unnecessary.
+                    if (!clientId.isNullOrBlank() && injectedRefresh != null && store.load() == null) {
+                        android.util.Log.i(TAG, "exchanging injected refresh token")
+                        when (val r = OAuthFlow.refresh(injectedRefresh, clientId)) {
+                            is OAuthFlow.Result.Success -> store.save(r.tokens)
+                            else -> android.util.Log.w(TAG, "injected token rejected: $r")
                         }
-                        else -> {
-                            if (store.load() == null && injectedRefresh != null) {
-                                android.util.Log.i(TAG, "exchanging injected refresh token")
-                                when (val r = OAuthFlow.refresh(injectedRefresh, Credentials.clientId(context).orEmpty())) {
-                                    is OAuthFlow.Result.Success -> store.save(r.tokens)
-                                    else -> android.util.Log.w(TAG, "injected token rejected: $r")
-                                }
-                            }
-                            // ★ Cold start touches the network for nothing but a possible token
-                            // refresh. The home card is built from local state alone; every fetch
-                            // sits behind a keypress that has already stated its price.
-                            refreshHome()
-                            screen = if (store.load() == null) Screen.NeedsLogin else Screen.Home
+                    }
+
+                    // ★ Cold start reads local state and, at most, refreshes a token. Nothing here
+                    // buys posts; every fetch sits behind a keypress that has already stated its price.
+                    val start = decideStart(clientId, bearer, fixtureName, store.load() != null)
+                    // Say where we landed and why. A provisioning run is otherwise unobservable from
+                    // the couch — the setup screen looks identical whether a credential is genuinely
+                    // absent or merely failed to arrive, and guessing between those cost a whole
+                    // debugging session once already. tools/provision.sh reads this line.
+                    android.util.Log.i(TAG, "start: $start")
+                    screen = when (start) {
+                        is Start.NeedsSetup -> Screen.NeedsSetup(start.missing)
+                        is Start.Fixture -> {
+                            fixtureRun = true
+                            reel = ReelPolicy.buildReel(FixtureSource.load(context, start.name))
+                            Screen.Reel
                         }
+                        Start.NeedsLogin -> { refreshHome(); Screen.NeedsLogin }
+                        Start.Home -> { refreshHome(); Screen.Home }
                     }
                 }
 
@@ -156,6 +198,9 @@ class MainActivity : ComponentActivity() {
                         when (val page = source.loadHead(allowed, reelStore.sinceId())) {
                             is PageResult.Ok -> {
                                 guard.record(page.postsRead)
+                                // The one moment the spend line is being watched for movement; a
+                                // minute-old cached figure would read as the app losing track.
+                                usageCache.invalidate()
                                 if (page.stats.shapeDrift) {
                                     // Never skip silently: an unparsed entry means the upstream
                                     // changed, and it looks exactly like "nothing new" if unreported.
@@ -187,16 +232,19 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                when (screen) {
+                when (val current = screen) {
                     Screen.Loading -> Unit
-                    Screen.NeedsSetup -> SetupGuideScreen()
+                    is Screen.NeedsSetup -> SetupGuideScreen(current.missing)
                     Screen.NeedsLogin -> LoginScreen(
                         onSuccess = { fresh: Tokens ->
                             lifecycleScope.launch {
                                 store.save(fresh); refreshHome(); screen = Screen.Home
                             }
                         },
-                        onCancel = { screen = Screen.NeedsSetup },
+                        // Backing out of the consent page leaves the app. There is nothing behind it:
+                        // the credentials are already present, so a setup screen would have nothing
+                        // to ask for.
+                        onCancel = { finish() },
                     )
                     Screen.Home -> HomeScreen(
                         state = home,
@@ -228,7 +276,10 @@ class MainActivity : ComponentActivity() {
                     Screen.Reel -> ReelViewer(
                         items = reel,
                         startIndex = startIndex,
-                        onExit = { scope.launch { refreshHome(); screen = Screen.Home } },
+                        onExit = {
+                            if (fixtureRun) finish()
+                            else scope.launch { refreshHome(); screen = Screen.Home }
+                        },
                         // Throttled: a reel changes item every few seconds and each write is a
                         // DataStore fsync. Losing at most one position on a hard kill is a fair
                         // trade for not writing to disk on every transition.

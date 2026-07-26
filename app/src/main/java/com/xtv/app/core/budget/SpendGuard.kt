@@ -6,9 +6,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.flow.first
-import com.xtv.app.core.budget.UsageApi
 import java.time.YearMonth
+import java.util.Locale
+import kotlinx.coroutines.flow.first
 
 private val Context.budgetStore by preferencesDataStore("xtv_budget")
 private const val TAG = "XTV-BUDGET"
@@ -22,20 +22,16 @@ private const val TAG = "XTV-BUDGET"
  * $9/month; the default ceiling is set well above that so it only ever catches something going
  * wrong.
  *
- * What is recorded here is an **estimate from response sizes**, not a bill. The authoritative number
- * lives in the developer console, and the UI should say so rather than implying otherwise.
+ * Two numbers live here and they are **not** interchangeable — see [State].
  */
 class SpendGuard(private val context: Context) {
-
-    /** Per-post price for non-owned reads, which is what the home timeline is. */
-    private val pricePerPost = 0.005
 
     suspend fun state(): State {
         val prefs = context.budgetStore.data.first()
         val month = prefs[MONTH]
         val posts = if (month == currentMonth()) prefs[POSTS] ?: 0 else 0
         val cap = prefs[CAP_CENTS]?.let { it / 100.0 } ?: DEFAULT_CAP_USD
-        return State(postsThisMonth = posts, spentUsd = posts * pricePerPost, capUsd = cap)
+        return State(postsThisMonth = posts, spentUsd = posts * PRICE_PER_POST, capUsd = cap)
     }
 
     /**
@@ -45,12 +41,7 @@ class SpendGuard(private val context: Context) {
      * a request is trimmed rather than refused, so a nearly-exhausted budget still yields a short
      * reel instead of nothing.
      */
-    suspend fun allowance(want: Int): Int {
-        val state = state()
-        val remainingUsd = (state.capUsd - state.spentUsd).coerceAtLeast(0.0)
-        val affordable = (remainingUsd / pricePerPost).toInt()
-        return want.coerceAtMost(affordable)
-    }
+    suspend fun allowance(want: Int): Int = state().let { affordable(it.capUsd, it.spentUsd, want) }
 
     /** Record posts actually read. Call with what came back, not what was asked for. */
     suspend fun record(postsRead: Int) {
@@ -69,43 +60,78 @@ class SpendGuard(private val context: Context) {
         context.budgetStore.edit { it[CAP_CENTS] = (usd * 100).toInt() }
     }
 
+    /**
+     * What the home screen shows, and what the ceiling is enforced against.
+     *
+     * These are deliberately separate fields because they count **different windows**:
+     *
+     *  - [spentUsd] is this app's own tally over a calendar month, rolling over on the 1st. It is an
+     *    upper bound (X dedupes repeat reads within a UTC day) and it is the only figure the local
+     *    ceiling may be compared against.
+     *  - [periodSpentUsd] is X's own count over X's own period, which ends on `cap_reset_day`. It is
+     *    *project*-wide, so it includes any other script sharing the credentials.
+     *
+     * Enforcing the ceiling against X's figure was the earlier behaviour and it is a trap: a
+     * `xurl` session on the same project could push the number past $20 and disable every reel card
+     * in an app that had spent cents. [exceeded] therefore reads the local tally — the thing the $20
+     * tripwire actually governs — while the display prefers X's number, which is the true bill.
+     */
     data class State(
         val postsThisMonth: Int,
         val spentUsd: Double,
         val capUsd: Double,
-        /** True when [postsThisMonth] came from X's own usage meter rather than the local tally. */
-        val authoritative: Boolean = false,
+        val periodSpentUsd: Double? = null,
+        /** Day of month X's period rolls over on. Non-null only when [authoritative] is. */
+        val resetDay: Int? = null,
     ) {
+        val authoritative: Boolean get() = periodSpentUsd != null
         val exceeded: Boolean get() = spentUsd >= capUsd
         /** Just the money. The limit only appears when it has actually been hit. */
-        val spentText: String get() = "$%.2f".format(spentUsd)
-        val capText: String get() = "$%.2f".format(capUsd)
-    }
+        val spentText: String get() = usd(periodSpentUsd ?: spentUsd)
+        val capText: String get() = usd(capUsd)
 
-    /**
-     * Replaces the local tally with X's own count when an app-only bearer is configured.
-     *
-     * The local number is an upper bound (X dedupes repeat reads of a resource within a UTC day), so
-     * where the two disagree, X's is the one to show.
-     */
-    suspend fun stateWithUsage(appOnlyBearer: String?): State {
-        val local = state()
-        val bearer = appOnlyBearer?.takeIf { it.isNotBlank() } ?: return local
-        val usage = UsageApi.postsThisPeriod(bearer) ?: return local
-        return local.copy(
-            postsThisMonth = usage.posts,
-            spentUsd = usage.posts * pricePerPost,
-            authoritative = true,
-        )
+        /**
+         * Fold in X's meter, if it answered.
+         *
+         * [UsageApi.Usage.capPosts] is intentionally discarded: X's cap is 2,000,000 posts, about
+         * $10,000, which is not a budget guard by any reading. The $20 local ceiling is the actual
+         * safety feature and it stays in charge.
+         */
+        fun mergedWith(usage: UsageApi.Usage?): State = when (usage) {
+            null -> this
+            else -> copy(periodSpentUsd = usage.posts * PRICE_PER_POST, resetDay = usage.resetDay)
+        }
     }
 
     private fun currentMonth(): String = YearMonth.now().toString()
 
-    private companion object {
+    companion object {
+        /** Per-post price for non-owned reads, which is what the home timeline is. */
+        const val PRICE_PER_POST = 0.005
+
         /** Measured usage is ~$9/month; this is a tripwire, not a target. */
         const val DEFAULT_CAP_USD = 20.0
-        val MONTH = stringPreferencesKey("month")
-        val POSTS = intPreferencesKey("posts")
-        val CAP_CENTS = intPreferencesKey("cap_cents")
+
+        /**
+         * How many posts fit in what is left of the ceiling, never more than [want].
+         *
+         * Pure, because it is the money maths and it should be checkable without a device.
+         */
+        fun affordable(
+            capUsd: Double,
+            spentUsd: Double,
+            want: Int,
+            pricePerPost: Double = PRICE_PER_POST,
+        ): Int {
+            val remainingUsd = (capUsd - spentUsd).coerceAtLeast(0.0)
+            return want.coerceAtMost((remainingUsd / pricePerPost).toInt())
+        }
+
+        /** Always US formatting: it is a dollar figure, not a localisable quantity. */
+        fun usd(amount: Double): String = String.format(Locale.US, "$%.2f", amount)
+
+        private val MONTH = stringPreferencesKey("month")
+        private val POSTS = intPreferencesKey("posts")
+        private val CAP_CENTS = intPreferencesKey("cap_cents")
     }
 }

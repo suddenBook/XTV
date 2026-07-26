@@ -6,10 +6,12 @@
     <string name="home_build_first">构建一卷</string>
     <string name="home_open_grid">查看整卷</string>
     <string name="home_history">卷获取历史</string>
-    <string name="home_spend">本月已花费 %1$s</string>
-    <string name="home_spend_note">上限估算 · 以 console.x.com 为准</string>
+    <string name="home_spend_period_reset">本期已花费 %1$s · %2$s 日重置</string>
+    <string name="home_spend_period">本期已花费 %1$s</string>
+    <string name="home_spend_estimate">本月已花费 %1$s · 上限估算 · 以 console.x.com 为准</string>
+    <string name="ordinal_style" translatable="false">zh</string>
     <string name="home_budget_exceeded">已超出本月上限</string>
-    <string name="home_budget_exceeded_body">已花费 %1$s，上限 %2$s。调高上限才能继续构建新的一卷。</string>
+    <string name="home_budget_exceeded_body">已花费 %1$s，本应用自设的本月上限为 %2$s。下月初自动重置。</string>
     <string name="home_budget_ok">知道了</string>
 
     <string name="size_short">短</string>
@@ -47,6 +49,7 @@
     <string name="note_transient">暂时失败：%1$s</string>
 
     <string name="setup_title">需要先配置</string>
-    <string name="setup_body">这个安装还没有 X API 凭据，所以拉不到任何内容。XTV 故意不内置凭据：X 按开发者应用的所有者计费，所以每个人都用自己的凭据、花自己的预算。</string>
+    <string name="setup_body">这个安装还没有 X API 凭据，所以拉不到任何内容。XTV 故意不内置凭据：X 按开发者应用的所有者计费，所以每个人都用自己的凭据、花自己的预算。下面三项都是必填的。</string>
+    <string name="setup_body_bearer">这个安装缺少 app-only Bearer Token。XTV 用它读取 X 自己的用量计数，这样显示的花费就是 X 按其计费周期统计的数字。没有它就只能自行估算，而估算按自然月计，与真正的计费周期并不一致。请带上三项凭据重新执行下面的命令。</string>
     <string name="setup_readme">完整说明见 README.md</string>
 </resources>
