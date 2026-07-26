@@ -10,56 +10,131 @@ UI follows the system language: English, 简体中文, 繁體中文.
 
 ---
 
-## Install
+## What you need
 
-Download the APK from [Releases](../../releases) and sideload it:
+- An **Android TV** device running Android 11 or newer.
+- A **computer with `adb`** on it, on the same network as the TV. (`adb` ships in Android platform
+  tools; `brew install android-platform-tools`, `apt install adb`, or the Android SDK.)
+- **Node.js**, for X's `xurl` CLI in step 4.
+- An **X account** you can create a developer app on, with a little money in it. Reads are prepaid —
+  a night's watching is about 15–50 cents.
+
+Setup takes about ten minutes and you only do it once. The steps are in order; each one produces
+something the next one needs.
+
+---
+
+## 1. Turn on debugging on the TV
+
+XTV is sideloaded, so the TV has to accept a connection from your computer.
+
+On Google TV / Android TV:
+
+1. **Settings → System → About**, scroll to **Android TV OS build**, and press OK on it **seven
+   times**. It will say *"You are now a developer"*.
+2. **Settings → System → Developer options** → turn on **USB debugging**. If your device also lists
+   **Network debugging** or **Wireless debugging**, turn that on too.
+3. **Settings → Network & Internet** → select your network → note the TV's **IP address**.
+
+Menu names vary a little by manufacturer, but every Android TV has this behind the build-number tap.
+
+## 2. Connect adb to the TV
 
 ```bash
-adb install -r XTV-v1.0.apk
+adb connect <tv-ip>:5555
+adb devices -l
 ```
 
-**The released APK contains no credentials.** You supply your own on first run — see below. That is
-not an inconvenience for its own sake: X bills API usage to the **owner of the developer app**, and
-OAuth does not move that invoice to whoever signs in. A build with someone's client id compiled into
-it would spend *their* credits for every user, and could drain their balance until their own app
-stopped working. There is no configuration that makes a shared build fair, so the APK ships empty.
+The TV shows an **"Allow USB debugging?"** prompt the first time. Accept it, and tick *Always allow
+from this computer* so you do not have to do it again.
 
-Launching it without credentials is harmless: it shows a setup guide instead of failing.
+You should see your TV listed as `device`:
 
-## Get your credentials
+```
+List of devices attached
+192.168.1.4:5555     device product:kirkwood model:Google_TV_Streamer
+```
 
-### 1. Register an X app
+If it says `unauthorized`, the prompt on the TV has not been accepted yet. If it says `offline` or
+nothing connects, some devices need to be told to listen first — plug the TV in over USB once and run
+`adb tcpip 5555`.
+
+> If you have more than one device connected, add `-s <tv-ip>:5555` to every `adb` command below.
+
+## 3. Create your X app
 
 At [console.x.com](https://console.x.com):
 
-- Enable **pay-per-use** and top up credits. Reads are prepaid; with none, the API returns HTTP 402
-  and XTV says so rather than pretending your timeline is empty.
-- Create an app, and under user authentication settings:
-  - **Type of App: Native App** (public client)
-  - **App permissions: Read** — XTV never writes
-  - **Callback URI:** `http://localhost:8080/callback`
-- From **Keys and tokens**, copy the **Client ID** and the app-only **Bearer Token**.
+1. Enable **pay-per-use** and top up credits. Reads are prepaid; with no balance the API returns HTTP
+   402 and XTV says so rather than pretending your timeline is empty.
+2. Create an app. Under **user authentication settings**:
+   - **Type of App: Native App** (a public client)
+   - **App permissions: Read** — XTV never writes anything
+   - **Callback URI:** `http://localhost:8080/callback`
+3. From **Keys and tokens**, copy two values and keep them somewhere for the next steps:
+   - the **Client ID**
+   - the app-only **Bearer Token**
 
-> You will also be shown a **Client Secret**. XTV never uses it — a Native App is a public client and
-> PKCE, not a secret, is what binds the authorization code. Ignore it.
+> **Copy the Bearer Token exactly as shown.** It contains literal `%2F` and `%3D` characters. Those
+> are part of the string, not percent-encoding — "decoding" them produces a token X rejects with a
+> 401. Do not let a shell or a text editor rewrite them.
 
-> The Bearer Token contains literal `%2F` and `%3D` characters. They are part of the string, not
-> percent-encoding: decoding them yields a token X rejects with a 401. Copy it verbatim.
+> You will also be shown a **Client Secret**. XTV never uses it: a Native App is a public client, and
+> PKCE rather than a secret is what binds the authorization code. Ignore it.
 
-### 2. Authorize once, anywhere with a browser
+## 4. Authorize your account
 
-Use [`xurl`](https://github.com/xdevplatform/xurl), X's own CLI:
+This is the step that proves you own the account. Use [`xurl`](https://github.com/xdevplatform/xurl),
+X's own CLI, on your computer:
 
 ```bash
 npm install -g @xdevplatform/xurl
 xurl auth apps add xtv --client-id '<client id>' --redirect-uri http://localhost:8080/callback
 xurl auth default xtv
-xurl auth oauth2 --headless      # prints a URL; open it on any device, paste the redirect back
+xurl auth oauth2
 ```
 
-The refresh token lands in `~/.xurl/auth.yml`.
+`xurl auth oauth2` opens a browser and prints **OAuth2 authentication successful!** when you approve.
+If the machine has no browser, use `xurl auth oauth2 --headless` instead: it prints a URL to open
+anywhere, and you paste the redirected address back.
 
-### 3. Hand all three values to the TV
+The refresh token lands in `~/.xurl/auth.yml`. You do not need to read it — the next step does.
+
+> **The refresh token is single-use.** X issues a new one every time it is exchanged and immediately
+> retires the old one. If step 6 fails and you have to retry, run `xurl auth oauth2` again first: the
+> token in `auth.yml` will already have been spent.
+
+## 5. Install XTV
+
+Download the APK from [Releases](../../releases), then:
+
+```bash
+adb install -r XTV-v1.0.apk
+```
+
+`-r` reinstalls over an existing copy and **keeps your session**, so this is also how you update.
+
+## 6. Sign the TV in
+
+From the repository root:
+
+```bash
+XTV_CLIENT_ID='<client id>' \
+XTV_BEARER='<bearer token>' \
+./tools/provision.sh <tv-ip>:5555
+```
+
+The script reads the refresh token out of `~/.xurl/auth.yml` for you, sends all three values to the
+app, and then checks that it actually worked. On success:
+
+```
+Provisioning 192.168.1.4:5555…
+Done. The token is now stored on the device; you will not need this again unless you
+uninstall, clear data, or install a build signed with a different key.
+```
+
+If you would rather not use the script, the equivalent is one command — but you have to supply the
+refresh token yourself:
 
 ```bash
 adb shell am start -n com.xtv.app/.MainActivity \
@@ -68,21 +143,59 @@ adb shell am start -n com.xtv.app/.MainActivity \
     --es bearer '<app-only bearer token>'
 ```
 
-Or let `tools/provision.sh` do it, reading the refresh token straight out of `~/.xurl/auth.yml`:
+All three are stored in the app's private storage on the device and never leave it. The OAuth session
+tokens are additionally encrypted with an AES-256-GCM key that lives in the device's hardware
+keystore; the client id and bearer are held as plain values in the same sandboxed storage.
 
-```bash
-XTV_CLIENT_ID='<client id>' XTV_BEARER='<bearer token>' ./tools/provision.sh
+## Did it work?
+
+Look at the TV. You should see the XTV home screen: **Build a reel** with Short / Standard / Long
+cards, and along the bottom a line like
+
+```
+$2.75 this period · resets on the 26th
 ```
 
-All three are stored on the device and never leave it. Done — the app is signed in.
+That last line is the proof that all three credentials are working — it is X's own spend figure, read
+back from your account.
 
-> **Refresh tokens rotate.** X issues a new one on every refresh and spends the old one, so the value
-> you inject is a *bootstrap*: after the first use the app's stored copy is the authority, and your
-> `xurl` copy is dead (re-run `xurl auth oauth2` if you want the CLI back). Reinstalling over the top
-> (`adb install -r`) keeps the session; `adb uninstall` or `pm clear` destroys it and you will need a
-> freshly issued token.
+Press OK on **Short** to buy 30 posts (about 15 cents) and start watching.
 
-### Why all three, and not two
+To see what the app thinks happened:
+
+```bash
+adb logcat -d -s XTV:* XTV-API:* XTV-BUDGET:* XTV-DIAG:*
+```
+
+The line beginning `start:` says which screen it chose and why.
+
+## If something went wrong
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | An XTV signed with a different key is already installed | `adb uninstall com.xtv.app`, then install again. This wipes the session, so redo steps 4 and 6. |
+| `adb: device unauthorized` | The debugging prompt on the TV was not accepted | Accept it on the TV, then `adb connect` again |
+| *"X rejected the refresh token"* | The token was already spent — they are single-use | `xurl auth oauth2`, then rerun step 6 |
+| *"Credentials stored, but there is no session"* | Same thing, caught a step later | `xurl auth oauth2`, then rerun step 6 |
+| Setup screen: *"no X API credentials yet"* | The client id did not arrive | Rerun step 6 and check `XTV_CLIENT_ID` is set |
+| Setup screen: *"missing the app-only Bearer Token"* | The bearer did not arrive | Rerun step 6 and check `XTV_BEARER` is set |
+| Spend line says *"this month · upper-bound estimate"* | The bearer is present but X rejected it — almost always because its `%2F`/`%3D` got decoded | Recopy it verbatim from Keys and tokens and rerun step 6. `adb logcat -d -s XTV-DIAG:*` shows the HTTP status. |
+| *"Your X account is out of API credits"* | No prepaid balance | Top up at console.x.com |
+| Home screen but nothing plays | The reel had no videos in it | Normal some nights — a timeline is mostly not video. Try a longer reel. |
+
+---
+
+## Why the APK ships empty
+
+**The released APK contains no credentials**, and that is not an inconvenience for its own sake. X
+bills API usage to the **owner of the developer app**, and OAuth does not move that invoice to
+whoever signs in. A build with someone's client id compiled into it would spend *their* credits for
+every user, and could drain their balance until their own app stopped working. There is no
+configuration that makes a shared build fair, so it ships with nothing.
+
+Launching it before setup is harmless: it shows the setup guide instead of failing.
+
+## Why all three credentials
 
 The client id and the refresh token are what fetch a timeline. The Bearer Token is what makes the
 spend figure true, and that is why it is not optional.
@@ -91,12 +204,12 @@ Without it XTV can only estimate, by counting the posts it asked for. That estim
 bound** — X dedupes repeat reads of the same resource within a UTC day — and, worse, it covers a
 *calendar month*. X bills over its own period, ending on `cap_reset_day`, which for most accounts is
 not the 1st. So the two numbers describe different windows and are not comparable. For an app whose
-every button spends real money, a figure that is approximately right over the wrong month is not
-good enough.
+every button spends real money, a figure that is approximately right over the wrong month is not good
+enough.
 
 With the bearer, XTV reads `GET /2/usage/tweets` for X's own consumed-post count and says which
-period it covers: *"$2.18 this period · resets on the 26th"*. If that call ever fails the app falls
-back to the estimate and relabels it as one, so the two are never presented as the same number.
+period it covers. If that call ever fails the app falls back to the estimate and relabels it as one,
+so the two are never presented as the same number.
 
 Two caveats worth knowing. X publishes no billing or balance endpoint, so dollars are always that
 count times the published per-post price; `console.x.com` remains the real invoice. And the figure is
@@ -132,6 +245,8 @@ BACK          first press shows the post; pressing it again leaves
 
 `MENU` is deliberately unused: Android TV does not guarantee remotes have one.
 
+---
+
 ## Building it yourself
 
 ```bash
@@ -140,8 +255,8 @@ echo "sdk.dir=$HOME/Android/Sdk" >> local.properties
 ```
 
 Optionally bake your client id into a private build so you do not have to pass it every time. It is a
-public-client identifier, not a secret, but it still bills to you — never put it in anything you
-publish:
+public-client identifier rather than a secret, but it still bills to you — never put it in anything
+you publish:
 
 ```bash
 echo "xtv.clientId=<client id>" >> local.properties   # git-ignored
@@ -168,12 +283,12 @@ over adb have nothing to fall back on — override the property with an empty va
 | `ANDROID_KEY_ALIAS` | Key alias |
 | `ANDROID_KEY_PASSWORD` | Key password |
 
-No X credentials are configured in CI, on purpose — see the top of this file.
+No X credentials are configured in CI, on purpose — see above.
 
 ### Development
 
 ```bash
-./gradlew testDebugUnitTest     # parser golden tests — no network, no spend
+./gradlew testDebugUnitTest     # no network, no spend
 ```
 
 The parser is tested against sanitised captures of real API responses in
@@ -189,7 +304,8 @@ adb shell am start -n com.xtv.app/.MainActivity --es fixture dead_links.json
 ```
 
 `docs/research/` records why this is built on the official API rather than the reverse-engineered web
-endpoints, including the paths that were investigated and rejected.
+endpoints, including the paths investigated and rejected. `docs/decisions.md` records what was
+deliberately left out, and why.
 
 ## Licence
 
