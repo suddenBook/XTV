@@ -38,3 +38,6 @@ tools/phase0/out/
 # as tools/phase0/out/. Regenerate with:
 #   cp tools/phase0/out/following/page1.json app/src/debug/assets/fixtures/following_raw.json
 app/src/debug/assets/
+
+# Working notes for the next session — not project documentation.
+HANDOFF.md
