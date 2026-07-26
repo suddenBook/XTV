@@ -156,8 +156,7 @@ jobs:
           This APK contains **no X API credentials**. After installing, supply your own:
 
           \`\`\`
-          adb shell am start -n com.xtv.app/.MainActivity \\
-              --es client_id <your client id> --es refresh_token <your refresh token>
+          adb shell am start -n com.xtv.app/.MainActivity --es client_id <your client id> --es refresh_token <your refresh token> --es bearer <app-only bearer token>
           \`\`\`
 
           X bills API usage to the owner of the developer app, so everyone runs XTV on their own
