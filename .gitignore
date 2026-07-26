@@ -1,0 +1,40 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Kotlin Gradle plugin data
+.kotlin/
+
+# Local SDK path + secrets (never commit)
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# Raw API captures from the Phase 0 probes. These are real posts from a real Following timeline:
+# author handles, post text, and signed media URLs. This repo is public — they must never be
+# committed. Test fixtures live in app/src/test/resources/fixtures/ and are sanitized first.
+tools/phase0/out/
+
+# Build artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# OS / logs
+.DS_Store
+*.log
+
+# Debug-only playable fixtures: the *unsanitised* capture, kept out of the repo for the same reason
+# as tools/phase0/out/. Regenerate with:
+#   cp tools/phase0/out/following/page1.json app/src/debug/assets/fixtures/following_raw.json
+app/src/debug/assets/

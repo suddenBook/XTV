@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_resume_title">繼續目前這一卷</string>
+    <string name="home_resume_subtitle">還剩 %1$d / %2$d   ·   不會產生新費用</string>
+    <string name="home_build_new">或者建立新的一卷（會花費）</string>
+    <string name="home_build_first">建立一卷</string>
+    <string name="home_open_grid">檢視整卷</string>
+    <string name="home_history">擷取紀錄</string>
+    <string name="home_spend">本月已花費 %1$s</string>
+    <string name="home_spend_note">上限估算 · 以 console.x.com 為準</string>
+    <string name="home_budget_exceeded">已超出本月上限</string>
+    <string name="home_budget_exceeded_body">已花費 %1$s，上限 %2$s。調高上限才能繼續建立新的一卷。</string>
+    <string name="home_budget_ok">知道了</string>
+
+    <string name="size_short">短</string>
+    <string name="size_standard">標準</string>
+    <string name="size_long">長</string>
+    <string name="size_estimate">約 %1$d 部影片</string>
+    <string name="size_cost">最多 %1$s</string>
+
+    <string name="exit_title">離開 X TV？</string>
+    <string name="exit_body">按 離開 結束，或 取消 繼續觀看。</string>
+    <string name="exit_confirm">離開</string>
+    <string name="exit_cancel">取消</string>
+
+    <string name="reel_done_title">這一卷結束了</string>
+    <string name="reel_done_counts">播放 %1$d</string>
+    <string name="reel_done_skipped">   ·   跳過 %1$d</string>
+    <string name="reel_done_failed">   ·   失敗 %1$d</string>
+    <string name="reel_done_hint">按 返回 回到首頁</string>
+    <string name="reel_empty">沒有可播放的內容</string>
+    <string name="reel_failures">连续 %1$d 条加载失敗</string>
+    <string name="reel_muted">靜音</string>
+
+    <string name="grid_count">本卷共 %1$d 部</string>
+
+    <string name="history_title">擷取紀錄</string>
+    <string name="history_empty">還沒有紀錄。</string>
+    <string name="history_header">%1$s   ·   本卷 %2$d 部</string>
+
+    <string name="note_building">正在建立…</string>
+    <string name="note_budget_short">本月預算不足，無法建立新的一卷</string>
+    <string name="note_no_videos">讀取了 %1$d 則貼文，但其中沒有影片</string>
+    <string name="note_credits">X 帳號的 API 額度已用盡：%1$s</string>
+    <string name="note_rate_limited">已被限流，稍後再試</string>
+    <string name="note_upstream">API 回傳的資料格式變了：%1$s</string>
+    <string name="note_transient">暂时失敗：%1$s</string>
+
+    <string name="setup_title">需要先設定</string>
+    <string name="setup_body">這個安裝還沒有 X API 憑證，所以擷取不到任何內容。XTV 刻意不內建憑證：X 是向開發者應用程式的擁有者收費，所以每個人都用自己的憑證、花自己的預算。</string>
+    <string name="setup_readme">完整說明請見 README.md</string>
+</resources>

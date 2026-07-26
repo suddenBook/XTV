@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base activity theme: no action bar, black background. Compose draws the rest.
+         An opaque window background also serves as the Overview placeholder once
+         setRecentsScreenshotEnabled(false) suppresses the real thumbnail. -->
+    <style name="Theme.XTV" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+    </style>
+</resources>

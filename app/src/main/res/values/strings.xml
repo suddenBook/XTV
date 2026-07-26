@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Default (English). Android picks values-zh-rCN / values-zh-rTW automatically from the system
+     locale; there is deliberately no in-app language switcher. -->
+<resources>
+    <string name="app_name">X TV</string>
+
+    <!-- Home -->
+    <string name="home_resume_title">Continue the current reel</string>
+    <string name="home_resume_subtitle">%1$d of %2$d left   ·   no new charge</string>
+    <string name="home_build_new">Or build a new reel (this costs money)</string>
+    <string name="home_build_first">Build a reel</string>
+    <string name="home_open_grid">See the whole reel</string>
+    <string name="home_history">Fetch history</string>
+    <string name="home_spend">Spent this month %1$s</string>
+    <string name="home_spend_note">upper-bound estimate · console.x.com is authoritative</string>
+    <string name="home_budget_exceeded">Monthly limit reached</string>
+    <string name="home_budget_exceeded_body">%1$s spent against a %2$s limit. Raise the limit to keep building reels.</string>
+    <string name="home_budget_ok">Got it</string>
+
+    <!-- Reel sizes -->
+    <string name="size_short">Short</string>
+    <string name="size_standard">Standard</string>
+    <string name="size_long">Long</string>
+    <string name="size_estimate">about %1$d videos</string>
+    <string name="size_cost">up to %1$s</string>
+
+    <!-- Exit -->
+    <string name="exit_title">Leave X TV?</string>
+    <string name="exit_body">Press Exit to leave, or Cancel to keep watching.</string>
+    <string name="exit_confirm">Exit</string>
+    <string name="exit_cancel">Cancel</string>
+
+    <!-- Reel -->
+    <string name="reel_done_title">That\'s the reel</string>
+    <string name="reel_done_counts">played %1$d</string>
+    <string name="reel_done_skipped">   ·   skipped %1$d</string>
+    <string name="reel_done_failed">   ·   failed %1$d</string>
+    <string name="reel_done_hint">Press Back to return</string>
+    <string name="reel_empty">Nothing to play</string>
+    <string name="reel_failures">%1$d in a row failed to load</string>
+    <string name="reel_muted">muted</string>
+
+    <!-- Grid -->
+    <string name="grid_count">%1$d in this reel</string>
+
+    <!-- History -->
+    <string name="history_title">Fetch history</string>
+    <string name="history_empty">Nothing recorded yet.</string>
+    <string name="history_header">%1$s   ·   %2$d in the current reel</string>
+
+    <!-- Status notes -->
+    <string name="note_building">Building…</string>
+    <string name="note_budget_short">Not enough budget left this month to build a reel</string>
+    <string name="note_no_videos">Read %1$d posts, but none carried video</string>
+    <string name="note_credits">Your X account is out of API credits: %1$s</string>
+    <string name="note_rate_limited">Rate limited — try again shortly</string>
+    <string name="note_upstream">The API response shape changed: %1$s</string>
+    <string name="note_transient">Temporary failure: %1$s</string>
+
+    <!-- Setup -->
+    <string name="setup_title">Setup needed</string>
+    <string name="setup_body">This install has no X API credentials yet, so it cannot fetch anything. XTV ships without them on purpose: X bills API usage to whoever owns the developer app, so everyone runs it on their own credentials and their own budget.</string>
+    <string name="setup_readme">Full instructions: README.md</string>
+</resources>

@@ -1,0 +1,470 @@
+{
+  "data": [
+    {
+      "attachments": {
+        "media_keys": [
+          "13_m0002"
+        ]
+      },
+      "author_id": "u0001",
+      "created_at": "2026-06-06T18:58:25.000Z",
+      "edit_history_tweet_ids": [
+        "t0000"
+      ],
+      "id": "t0000",
+      "possibly_sensitive": true,
+      "text": "word0 word1 word2 word3 word4 word5 https://t.co/xxxxxxxxxx"
+    },
+    {
+      "attachments": {
+        "media_keys": [
+          "13_m0005"
+        ]
+      },
+      "author_id": "u0004",
+      "created_at": "2026-07-02T23:06:09.000Z",
+      "edit_history_tweet_ids": [
+        "t0003"
+      ],
+      "id": "t0003",
+      "possibly_sensitive": false,
+      "text": "word0 https://t.co/xxxxxxxxxx"
+    },
+    {
+      "attachments": {
+        "media_keys": [
+          "13_m0008"
+        ]
+      },
+      "author_id": "u0007",
+      "created_at": "2026-06-26T16:43:20.000Z",
+      "edit_history_tweet_ids": [
+        "t0006"
+      ],
+      "id": "t0006",
+      "possibly_sensitive": true,
+      "text": "word0 word1 https://t.co/xxxxxxxxxx"
+    },
+    {
+      "attachments": {
+        "media_keys": [
+          "13_m0011"
+        ]
+      },
+      "author_id": "u0010",
+      "created_at": "2026-05-03T13:34:00.000Z",
+      "edit_history_tweet_ids": [
+        "t0009"
+      ],
+      "id": "t0009",
+      "possibly_sensitive": false,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 https://t.co/xxxxxxxxxx"
+    },
+    {
+      "attachments": {
+        "media_keys": [
+          "7_m0014"
+        ]
+      },
+      "author_id": "u0013",
+      "created_at": "2026-06-11T03:14:07.000Z",
+      "edit_history_tweet_ids": [
+        "t0012"
+      ],
+      "id": "t0012",
+      "possibly_sensitive": false,
+      "text": "word0 word1 https://t.co/xxxxxxxxxx"
+    },
+    {
+      "attachments": {
+        "media_keys": [
+          "13_m0017"
+        ]
+      },
+      "author_id": "u0016",
+      "created_at": "2026-05-25T02:17:38.000Z",
+      "edit_history_tweet_ids": [
+        "t0015"
+      ],
+      "id": "t0015",
+      "possibly_sensitive": true,
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 https://t.co/xxxxxxxxxx"
+    },
+    {
+      "attachments": {
+        "media_keys": [
+          "7_m0020"
+        ]
+      },
+      "author_id": "u0019",
+      "created_at": "2024-06-20T12:31:24.000Z",
+      "edit_history_tweet_ids": [
+        "t0018"
+      ],
+      "id": "t0018",
+      "possibly_sensitive": false,
+      "text": "word0 word1 https://t.co/xxxxxxxxxx"
+    },
+    {
+      "attachments": {
+        "media_keys": [
+          "13_m0023"
+        ]
+      },
+      "author_id": "u0022",
+      "created_at": "2026-04-11T11:45:29.000Z",
+      "edit_history_tweet_ids": [
+        "t0021"
+      ],
+      "id": "t0021",
+      "possibly_sensitive": true,
+      "text": "word0 word1 word2 word3 word4 word5 word6 https://t.co/xxxxxxxxxx"
+    },
+    {
+      "attachments": {
+        "media_keys": [
+          "13_m0026"
+        ]
+      },
+      "author_id": "u0025",
+      "created_at": "2026-03-18T02:19:26.000Z",
+      "edit_history_tweet_ids": [
+        "t0024"
+      ],
+      "id": "t0024",
+      "possibly_sensitive": true,
+      "text": "word0 word1 word2 word3 word4 https://t.co/xxxxxxxxxx"
+    }
+  ],
+  "includes": {
+    "media": [
+      {
+        "duration_ms": 11600,
+        "height": 2160,
+        "media_key": "13_m0002",
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/m0002.jpg",
+        "type": "video",
+        "variants": [
+          {
+            "content_type": "application/x-mpegURL",
+            "url": "https://video.twimg.invalid/m0002/hls.m3u8"
+          },
+          {
+            "bit_rate": 832000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0002/832000.mp4"
+          },
+          {
+            "bit_rate": 256000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0002/256000.mp4"
+          },
+          {
+            "bit_rate": 10368000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0002/10368000.mp4"
+          },
+          {
+            "bit_rate": 2176000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0002/2176000.mp4"
+          },
+          {
+            "bit_rate": 25128000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0002/25128000.mp4"
+          }
+        ],
+        "width": 3840
+      },
+      {
+        "duration_ms": 1140704,
+        "height": 960,
+        "media_key": "13_m0005",
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/m0005.jpg",
+        "type": "video",
+        "variants": [
+          {
+            "bit_rate": 632000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0005/632000.mp4"
+          },
+          {
+            "bit_rate": 950000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0005/950000.mp4"
+          },
+          {
+            "bit_rate": 2176000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0005/2176000.mp4"
+          },
+          {
+            "content_type": "application/x-mpegURL",
+            "url": "https://video.twimg.invalid/m0005/hls.m3u8"
+          }
+        ],
+        "width": 540
+      },
+      {
+        "duration_ms": 792233,
+        "height": 1278,
+        "media_key": "13_m0008",
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/m0008.jpg",
+        "type": "video",
+        "variants": [
+          {
+            "bit_rate": 632000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0008/632000.mp4"
+          },
+          {
+            "bit_rate": 950000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0008/950000.mp4"
+          },
+          {
+            "bit_rate": 2176000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0008/2176000.mp4"
+          },
+          {
+            "content_type": "application/x-mpegURL",
+            "url": "https://video.twimg.invalid/m0008/hls.m3u8"
+          }
+        ],
+        "width": 720
+      },
+      {
+        "duration_ms": 159916,
+        "height": 1920,
+        "media_key": "13_m0011",
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/m0011.jpg",
+        "type": "video",
+        "variants": [
+          {
+            "bit_rate": 632000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0011/632000.mp4"
+          },
+          {
+            "bit_rate": 950000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0011/950000.mp4"
+          },
+          {
+            "bit_rate": 2176000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0011/2176000.mp4"
+          },
+          {
+            "content_type": "application/x-mpegURL",
+            "url": "https://video.twimg.invalid/m0011/hls.m3u8"
+          }
+        ],
+        "width": 1080
+      },
+      {
+        "duration_ms": 76528,
+        "height": 720,
+        "media_key": "7_m0014",
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/m0014.jpg",
+        "type": "video",
+        "variants": [
+          {
+            "bit_rate": 256000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0014/256000.mp4"
+          },
+          {
+            "bit_rate": 832000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0014/832000.mp4"
+          },
+          {
+            "bit_rate": 2176000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0014/2176000.mp4"
+          },
+          {
+            "content_type": "application/x-mpegURL",
+            "url": "https://video.twimg.invalid/m0014/hls.m3u8"
+          }
+        ],
+        "width": 1280
+      },
+      {
+        "duration_ms": 1408633,
+        "height": 1920,
+        "media_key": "13_m0017",
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/m0017.jpg",
+        "type": "video",
+        "variants": [
+          {
+            "bit_rate": 10368000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0017/10368000.mp4"
+          },
+          {
+            "content_type": "application/x-mpegURL",
+            "url": "https://video.twimg.invalid/m0017/hls.m3u8"
+          },
+          {
+            "bit_rate": 2176000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0017/2176000.mp4"
+          },
+          {
+            "bit_rate": 632000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0017/632000.mp4"
+          },
+          {
+            "bit_rate": 950000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0017/950000.mp4"
+          }
+        ],
+        "width": 1080
+      },
+      {
+        "duration_ms": 97808,
+        "height": 1280,
+        "media_key": "7_m0020",
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/m0020.jpg",
+        "type": "video",
+        "variants": [
+          {
+            "bit_rate": 632000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0020/632000.mp4"
+          },
+          {
+            "bit_rate": 950000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0020/950000.mp4"
+          },
+          {
+            "bit_rate": 2176000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0020/2176000.mp4"
+          },
+          {
+            "content_type": "application/x-mpegURL",
+            "url": "https://video.twimg.invalid/m0020/hls.m3u8"
+          }
+        ],
+        "width": 720
+      },
+      {
+        "duration_ms": 45566,
+        "height": 1280,
+        "media_key": "13_m0023",
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/m0023.jpg",
+        "type": "video",
+        "variants": [
+          {
+            "bit_rate": 632000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0023/632000.mp4"
+          },
+          {
+            "bit_rate": 950000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0023/950000.mp4"
+          },
+          {
+            "bit_rate": 2176000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0023/2176000.mp4"
+          },
+          {
+            "content_type": "application/x-mpegURL",
+            "url": "https://video.twimg.invalid/m0023/hls.m3u8"
+          }
+        ],
+        "width": 720
+      },
+      {
+        "duration_ms": 57100,
+        "height": 1920,
+        "media_key": "13_m0026",
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/m0026.jpg",
+        "type": "video",
+        "variants": [
+          {
+            "bit_rate": 632000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0026/632000.mp4"
+          },
+          {
+            "bit_rate": 950000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0026/950000.mp4"
+          },
+          {
+            "bit_rate": 2176000,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/m0026/2176000.mp4"
+          },
+          {
+            "content_type": "application/x-mpegURL",
+            "url": "https://video.twimg.invalid/m0026/hls.m3u8"
+          }
+        ],
+        "width": 1080
+      }
+    ],
+    "users": [
+      {
+        "id": "u0001",
+        "name": "Creator 0001",
+        "username": "creator0001"
+      },
+      {
+        "id": "u0004",
+        "name": "Creator 0004",
+        "username": "creator0004"
+      },
+      {
+        "id": "u0007",
+        "name": "Creator 0007",
+        "username": "creator0007"
+      },
+      {
+        "id": "u0010",
+        "name": "Creator 0010",
+        "username": "creator0010"
+      },
+      {
+        "id": "u0013",
+        "name": "Creator 0013",
+        "username": "creator0013"
+      },
+      {
+        "id": "u0016",
+        "name": "Creator 0016",
+        "username": "creator0016"
+      },
+      {
+        "id": "u0019",
+        "name": "Creator 0019",
+        "username": "creator0019"
+      },
+      {
+        "id": "u0022",
+        "name": "Creator 0022",
+        "username": "creator0022"
+      },
+      {
+        "id": "u0025",
+        "name": "Creator 0025",
+        "username": "creator0025"
+      }
+    ]
+  },
+  "meta": {
+    "next_token": "NEXTTOKEN0000000001",
+    "result_count": 9
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Hand-built, not captured: the Phase 0 samples happened to contain no animated_gif.",
+    "Shape follows the documented data dictionary — X serves 'GIFs' as silent looping MP4s, so the",
+    "object carries variants like a video but type is 'animated_gif'. duration_ms is deliberately",
+    "ABSENT here: that is the documented-nullable field that will NPE a non-nullable model."
+  ],
+  "data": [
+    {
+      "id": "t9000",
+      "text": "word0 word1",
+      "author_id": "u9000",
+      "created_at": "2026-07-26T15:30:00.000Z",
+      "possibly_sensitive": false,
+      "edit_history_tweet_ids": ["t9000"],
+      "attachments": { "media_keys": ["7_m9000"] }
+    }
+  ],
+  "includes": {
+    "media": [
+      {
+        "media_key": "7_m9000",
+        "type": "animated_gif",
+        "width": 498,
+        "height": 280,
+        "preview_image_url": "https://pbs.twimg.invalid/thumb/pv9000.jpg",
+        "variants": [
+          {
+            "bit_rate": 0,
+            "content_type": "video/mp4",
+            "url": "https://video.twimg.invalid/vd9000/0.mp4"
+          }
+        ]
+      }
+    ],
+    "users": [
+      { "id": "u9000", "username": "creator9000", "name": "Creator 9000" }
+    ]
+  },
+  "meta": { "result_count": 1 }
+}

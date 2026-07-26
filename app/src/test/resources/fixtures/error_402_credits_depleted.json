@@ -1,0 +1,6 @@
+{
+  "detail": "credits depleted",
+  "status": 402,
+  "title": "Payment Required",
+  "type": "https://api.x.com/2/problems/credits-depleted"
+}

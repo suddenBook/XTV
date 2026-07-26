@@ -1,0 +1,188 @@
+name: Build and Release XTV APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Build signed release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
+
+      - name: Install Android platform and build-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          install_pkg() {
+            local pkg="$1"
+            echo "Installing $pkg ..."
+            if sdkmanager "$pkg" >/dev/null; then return 0; fi
+            echo "Package $pkg not in the default channel; retrying preview channels ..."
+            sdkmanager --channel=3 "$pkg"
+          }
+          # compileSdk = 37 resolves to the minor-versioned platform package "android-37.0".
+          install_pkg "platforms;android-37.0"
+          install_pkg "build-tools;37.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      # No X credentials are configured, deliberately. X bills API usage to the owner of the
+      # developer app, so a published build carrying anyone's client id would spend that person's
+      # credits for every user who installed it. The released APK therefore contains nothing; each
+      # user injects their own over adb on first run (see README).
+      - name: Run unit tests
+        shell: bash
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+      - name: Read app version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_name="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' app/build.gradle.kts | head -n 1)"
+          if [[ -z "$version_name" || -z "$version_code" ]]; then
+            echo "Failed to read versionCode/versionName from app/build.gradle.kts" >&2
+            exit 1
+          fi
+          echo "name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version_name" >> "$GITHUB_OUTPUT"
+          echo "apk=XTV-v$version_name.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Decode signing keystore
+        id: signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required repository secret: $name" >&2
+              exit 1
+            fi
+          done
+          keystore="$RUNNER_TEMP/release.keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          echo "keystore=$keystore" >> "$GITHUB_OUTPUT"
+
+      - name: Build unsigned release APK
+        shell: bash
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Align, sign, and verify APK
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEYSTORE_PATH: ${{ steps.signing.outputs.keystore }}
+          APK_NAME: ${{ steps.version.outputs.apk }}
+        run: |
+          set -euo pipefail
+          build_tools_version="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -n 1)"
+          if [[ -z "$build_tools_version" ]]; then
+            echo "No Android build-tools installation found" >&2
+            exit 1
+          fi
+          build_tools="$ANDROID_HOME/build-tools/$build_tools_version"
+          unsigned_apk="$(find app/build/outputs/apk/release -maxdepth 1 -name '*release-unsigned.apk' | head -n 1)"
+          if [[ -z "$unsigned_apk" ]]; then
+            echo "Unsigned release APK not found" >&2
+            exit 1
+          fi
+          "$build_tools/zipalign" -p -f 4 "$unsigned_apk" "$RUNNER_TEMP/app-release-aligned.apk"
+          "$build_tools/apksigner" sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "$APK_NAME" \
+            "$RUNNER_TEMP/app-release-aligned.apk"
+          "$build_tools/apksigner" verify --verbose --print-certs "$APK_NAME"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.version.outputs.apk }}
+          path: ${{ steps.version.outputs.apk }}
+          if-no-files-found: error
+
+      - name: Write release notes
+        shell: bash
+        env:
+          APK_NAME: ${{ steps.version.outputs.apk }}
+        run: |
+          cat > release-notes.md <<EOF
+          Automated release for ${{ steps.version.outputs.tag }} (X TV).
+
+          - Version name: ${{ steps.version.outputs.name }}
+          - Version code: ${{ steps.version.outputs.code }}
+          - Commit: ${{ github.sha }}
+          - APK: ${APK_NAME}
+
+          This APK contains **no X API credentials**. After installing, supply your own:
+
+          \`\`\`
+          adb shell am start -n com.xtv.app/.MainActivity \\
+              --es client_id <your client id> --es refresh_token <your refresh token>
+          \`\`\`
+
+          X bills API usage to the owner of the developer app, so everyone runs XTV on their own
+          credentials and their own budget. See README.md for how to obtain both values.
+          EOF
+
+      - name: Create or update GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          APK_NAME: ${{ steps.version.outputs.apk }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --latest
+            gh release upload "$TAG" "$APK_NAME" --clobber
+          else
+            gh release create "$TAG" "$APK_NAME" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --latest
+          fi
