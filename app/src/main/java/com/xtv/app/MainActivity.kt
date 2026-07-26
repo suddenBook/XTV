@@ -58,11 +58,12 @@ class MainActivity : ComponentActivity() {
 
         // Keep this app's content out of the Overview (recents) thumbnail — it's a living-room device.
         //
-        // Release only. Measured on a Google TV Streamer (Android 14): with this enabled, `adb exec-out
-        // screencap` returns a fully black frame even though the app renders normally on the panel. The
-        // documented contract says it should only affect the Overview representation, but this device
-        // applies it to system captures too. Screencap is the only way to see what the UI actually looks
-        // like on a TV, so debug builds keep it.
+        // Release only. This was once reported to also blacken `adb exec-out screencap` on a Google TV
+        // Streamer, which would have made the one usable way to see the UI on a TV useless. Re-measured
+        // on the same device (Android 14, release build, this call active): screencap returns normal
+        // frames every time. The gate stays because the documented contract is Overview-only and there
+        // is no reason for a debug build to hide from recents, but do not expect a black frame here —
+        // if you get one, look for a different cause.
         if (!BuildConfig.DEBUG && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             setRecentsScreenshotEnabled(false)
         }
