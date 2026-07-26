@@ -159,8 +159,10 @@ jobs:
           adb shell am start -n com.xtv.app/.MainActivity --es client_id <your client id> --es refresh_token <your refresh token> --es bearer <app-only bearer token>
           \`\`\`
 
-          X bills API usage to the owner of the developer app, so everyone runs XTV on their own
-          credentials and their own budget. See README.md for how to obtain both values.
+          All three are required. X bills API usage to the owner of the developer app, so everyone
+          runs XTV on their own credentials and their own budget; the app-only bearer is what lets it
+          show X's own spend figure for X's own billing period rather than guessing over a calendar
+          month. See README.md for how to obtain all three values.
           EOF
 
       - name: Create or update GitHub release

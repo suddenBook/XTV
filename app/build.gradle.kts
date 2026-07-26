@@ -8,6 +8,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+private val localProperties: Properties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+
 /**
  * The X API client id is per-builder, never committed, and never baked into a distributed APK.
  *
@@ -17,15 +21,16 @@ plugins {
  * X app and puts its client id in `local.properties` (git-ignored) as `xtv.clientId=...`.
  *
  * A build without it still compiles and installs; the app shows a setup guide instead of crashing.
+ *
+ * `-Pxtv.clientId=` overrides the file with an empty value, which is what a published build actually
+ * looks like. That case has its own behaviour — no fallback when credentials are injected over adb —
+ * and it was previously impossible to reproduce on a machine that had a client id configured. The
+ * override is deliberately *not* filtered for blankness: an explicit empty value has to win.
  */
-private val xtvClientId: String = Properties().apply {
-    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
-}.getProperty("xtv.clientId") ?: ""
-
-/** Optional pre-authorised session, for a build that should install already logged in. */
-private val xtvRefreshToken: String = Properties().apply {
-    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
-}.getProperty("xtv.refreshToken") ?: ""
+private val xtvClientId: String =
+    providers.gradleProperty("xtv.clientId").orNull
+        ?: localProperties.getProperty("xtv.clientId")
+        ?: ""
 
 android {
     namespace = "com.xtv.app"
@@ -36,13 +41,10 @@ android {
         // 30 covers both target boxes: Google TV Streamer (34) and the Xiaomi MiTV-MOOR2 (30).
         minSdk = 30
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "1.0"
 
         buildConfigField("String", "X_CLIENT_ID", "\"$xtvClientId\"")
-        // Optional. A build carrying this is *already signed in* — which also makes the APK a
-        // full account credential. Never publish such a build, never upload it as a CI artifact.
-        buildConfigField("String", "X_REFRESH_TOKEN", "\"$xtvRefreshToken\"")
         // Registered on the X developer app. Nothing ever listens on it: the OAuth consent page runs in
         // our own WebView and `shouldOverrideUrlLoading` intercepts the redirect *before* navigation,
         // so this address never has to resolve.

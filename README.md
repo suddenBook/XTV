@@ -15,7 +15,7 @@ UI follows the system language: English, 简体中文, 繁體中文.
 Download the APK from [Releases](../../releases) and sideload it:
 
 ```bash
-adb install -r XTV-v0.1.apk
+adb install -r XTV-v1.0.apk
 ```
 
 **The released APK contains no credentials.** You supply your own on first run — see below. That is
@@ -38,10 +38,13 @@ At [console.x.com](https://console.x.com):
   - **Type of App: Native App** (public client)
   - **App permissions: Read** — XTV never writes
   - **Callback URI:** `http://localhost:8080/callback`
-- Copy the **Client ID**.
+- From **Keys and tokens**, copy the **Client ID** and the app-only **Bearer Token**.
 
 > You will also be shown a **Client Secret**. XTV never uses it — a Native App is a public client and
 > PKCE, not a secret, is what binds the authorization code. Ignore it.
+
+> The Bearer Token contains literal `%2F` and `%3D` characters. They are part of the string, not
+> percent-encoding: decoding them yields a token X rejects with a 401. Copy it verbatim.
 
 ### 2. Authorize once, anywhere with a browser
 
@@ -56,15 +59,22 @@ xurl auth oauth2 --headless      # prints a URL; open it on any device, paste th
 
 The refresh token lands in `~/.xurl/auth.yml`.
 
-### 3. Hand both values to the TV
+### 3. Hand all three values to the TV
 
 ```bash
 adb shell am start -n com.xtv.app/.MainActivity \
     --es client_id '<client id>' \
-    --es refresh_token '<refresh token>'
+    --es refresh_token '<refresh token>' \
+    --es bearer '<app-only bearer token>'
 ```
 
-They are stored on the device and never leave it. Done — the app is signed in.
+Or let `tools/provision.sh` do it, reading the refresh token straight out of `~/.xurl/auth.yml`:
+
+```bash
+XTV_CLIENT_ID='<client id>' XTV_BEARER='<bearer token>' ./tools/provision.sh
+```
+
+All three are stored on the device and never leave it. Done — the app is signed in.
 
 > **Refresh tokens rotate.** X issues a new one on every refresh and spends the old one, so the value
 > you inject is a *bootstrap*: after the first use the app's stored copy is the authority, and your
@@ -72,19 +82,27 @@ They are stored on the device and never leave it. Done — the app is signed in.
 > (`adb install -r`) keeps the session; `adb uninstall` or `pm clear` destroys it and you will need a
 > freshly issued token.
 
-### Optional: exact spend figures
+### Why all three, and not two
 
-By default the app estimates spend from the posts it read, which is an **upper bound** — X dedupes
-repeat reads of the same resource within a UTC day. To show X's own count instead, add the app-only
-**Bearer Token** from the app's Keys and tokens page:
+The client id and the refresh token are what fetch a timeline. The Bearer Token is what makes the
+spend figure true, and that is why it is not optional.
 
-```bash
-adb shell am start -n com.xtv.app/.MainActivity --es bearer '<app-only bearer token>'
-```
+Without it XTV can only estimate, by counting the posts it asked for. That estimate is an **upper
+bound** — X dedupes repeat reads of the same resource within a UTC day — and, worse, it covers a
+*calendar month*. X bills over its own period, ending on `cap_reset_day`, which for most accounts is
+not the 1st. So the two numbers describe different windows and are not comparable. For an app whose
+every button spends real money, a figure that is approximately right over the wrong month is not
+good enough.
 
-XTV then reads `GET /2/usage/tweets` for the authoritative consumed-post count. X publishes no
-billing or balance endpoint, so dollars are still that count times the published per-post price;
-`console.x.com` remains the real invoice.
+With the bearer, XTV reads `GET /2/usage/tweets` for X's own consumed-post count and says which
+period it covers: *"$2.18 this period · resets on the 26th"*. If that call ever fails the app falls
+back to the estimate and relabels it as one, so the two are never presented as the same number.
+
+Two caveats worth knowing. X publishes no billing or balance endpoint, so dollars are always that
+count times the published per-post price; `console.x.com` remains the real invoice. And the figure is
+*project*-wide — a script sharing the same credentials is included in it. That is why it is only ever
+displayed, never used to enforce XTV's own monthly ceiling, which is measured against what this app
+alone has spent.
 
 ## What it costs
 
@@ -121,12 +139,22 @@ echo "sdk.dir=$HOME/Android/Sdk" >> local.properties
 ./gradlew assembleDebug
 ```
 
-Optionally bake credentials into a private build so it installs already signed in — never do this to
-anything you publish, since the APK then *is* an account credential:
+Optionally bake your client id into a private build so you do not have to pass it every time. It is a
+public-client identifier, not a secret, but it still bills to you — never put it in anything you
+publish:
 
 ```bash
-echo "xtv.clientId=<client id>"       >> local.properties   # git-ignored
-echo "xtv.refreshToken=<token>"       >> local.properties
+echo "xtv.clientId=<client id>" >> local.properties   # git-ignored
+```
+
+The refresh token and bearer are never build-time values: they arrive over adb and live only on the
+device.
+
+To reproduce what a published build actually does — no compiled-in client id, so credentials injected
+over adb have nothing to fall back on — override the property with an empty value:
+
+```bash
+./gradlew assembleRelease -Pxtv.clientId=
 ```
 
 ### Releases
