@@ -91,8 +91,12 @@ class SpendGuard(private val context: Context) {
     suspend fun stateWithUsage(appOnlyBearer: String?): State {
         val local = state()
         val bearer = appOnlyBearer?.takeIf { it.isNotBlank() } ?: return local
-        val posts = UsageApi.postsThisMonth(bearer) ?: return local
-        return local.copy(postsThisMonth = posts, spentUsd = posts * pricePerPost, authoritative = true)
+        val usage = UsageApi.postsThisPeriod(bearer) ?: return local
+        return local.copy(
+            postsThisMonth = usage.posts,
+            spentUsd = usage.posts * pricePerPost,
+            authoritative = true,
+        )
     }
 
     private fun currentMonth(): String = YearMonth.now().toString()

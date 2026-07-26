@@ -3,12 +3,10 @@ package com.xtv.app.core.budget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.time.YearMonth
 
 /**
  * X's own consumption meter — the authoritative alternative to counting locally.
@@ -29,30 +27,40 @@ object UsageApi {
     private val client = OkHttpClient()
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** Posts consumed so far in the current calendar month, or null if unavailable. */
-    suspend fun postsThisMonth(appOnlyBearer: String): Int? = withContext(Dispatchers.IO) {
+    /**
+     * Posts consumed so far in the current cap period, or null if unavailable.
+     *
+     * Two things the docs do not make obvious, both confirmed against the live endpoint:
+     *  - The response is a flat `data.project_usage` **string**, not the `daily_project_usage`
+     *    breakdown the reference page describes, and `?days=` changes nothing.
+     *  - The period resets on `cap_reset_day` (26 in the account this was checked against), **not**
+     *    on the 1st. So this figure and a calendar-month tally count different windows.
+     *
+     * It is also *project*-wide: anything else using the same credentials — a script, a CLI — is
+     * included. That makes it the real bill rather than this app's share of it, which is the point.
+     */
+    suspend fun postsThisPeriod(appOnlyBearer: String): Usage? = withContext(Dispatchers.IO) {
         runCatching {
             val request = Request.Builder()
-                .url("https://api.x.com/2/usage/tweets?days=31")
+                .url("https://api.x.com/2/usage/tweets")
+                // The bearer from the console contains literal '%2F' / '%3D' characters. They are
+                // part of the token, not percent-encoding — decoding them yields a 401.
                 .header("Authorization", "Bearer $appOnlyBearer")
                 .build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use null
-                val root = json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject
-                val daily = root["data"]?.jsonObject?.get("daily_project_usage")?.jsonArray
+                val data = json.parseToJsonElement(response.body?.string().orEmpty())
+                    .jsonObject["data"]?.jsonObject ?: return@use null
+                val used = data["project_usage"]?.jsonPrimitive?.content?.toIntOrNull()
                     ?: return@use null
-                val month = YearMonth.now().toString() // "2026-07"
-                daily.sumOf { day ->
-                    val obj = day.jsonObject
-                    val date = obj["date"]?.jsonPrimitive?.content.orEmpty()
-                    // Only this calendar month: the window is 31 days and straddles the boundary.
-                    if (date.startsWith(month)) {
-                        obj["tweets_consumed"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
-                    } else {
-                        0
-                    }
-                }
+                Usage(
+                    posts = used,
+                    capPosts = data["project_cap"]?.jsonPrimitive?.content?.toIntOrNull(),
+                    resetDay = data["cap_reset_day"]?.jsonPrimitive?.content?.toIntOrNull(),
+                )
             }
         }.getOrNull()
     }
+
+    data class Usage(val posts: Int, val capPosts: Int?, val resetDay: Int?)
 }
