@@ -88,14 +88,23 @@ jobs:
           unsigned_apk="${unsigned_apks[0]}"
           build_tools="$ANDROID_HOME/build-tools/37.0.0"
           bash tools/inspect-release-apk.sh "$unsigned_apk" "$build_tools"
-          sha256sum "$unsigned_apk" > XTV-v1.1.0-unsigned.apk.sha256
+          # Named from the build file, not pinned here: a stale literal silently labels the
+          # evidence with the wrong version, which is worse than no evidence at all.
+          version_name="$(
+            sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' \
+              app/build.gradle.kts | head -n 1
+          )"
+          [ -n "$version_name" ] || { echo "Could not read versionName." >&2; exit 1; }
+          sha256sum "$unsigned_apk" > "XTV-v${version_name}-unsigned.apk.sha256"
+          echo "version=$version_name" >> "$GITHUB_OUTPUT"
+        id: inspect
 
       - name: Upload verification evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: XTV-v1.1.0-verification
+          name: XTV-v${{ steps.inspect.outputs.version }}-verification
           path: |
             app/build/outputs/apk/release/*release-unsigned.apk
-            XTV-v1.1.0-unsigned.apk.sha256
+            XTV-v*-unsigned.apk.sha256
             app/build/reports/lint-results-release.html
           if-no-files-found: error

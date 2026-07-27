@@ -52,9 +52,25 @@ manifest_has() {
   grep -Fq "$1" "$MANIFEST" || fail "Release manifest is missing: $1"
 }
 
+# Read the expected version from the build file rather than pinning it here. Hard-coded numbers
+# in this check do not fail when the manifest is wrong; they fail on the next version bump, which
+# is the one moment the check is meant to be trusted.
+GRADLE_FILE="app/build.gradle.kts"
+[ -f "$GRADLE_FILE" ] || fail "Cannot read the version: $GRADLE_FILE is missing."
+EXPECTED_VERSION_CODE="$(
+  sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' "$GRADLE_FILE" |
+    head -n 1
+)"
+EXPECTED_VERSION_NAME="$(
+  sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$GRADLE_FILE" |
+    head -n 1
+)"
+[ -n "$EXPECTED_VERSION_CODE" ] || fail "Could not read versionCode from $GRADLE_FILE."
+[ -n "$EXPECTED_VERSION_NAME" ] || fail "Could not read versionName from $GRADLE_FILE."
+
 manifest_has 'A: package="com.xtv.app"'
-manifest_has 'A: http://schemas.android.com/apk/res/android:versionCode(0x0101021b)=3'
-manifest_has 'A: http://schemas.android.com/apk/res/android:versionName(0x0101021c)="1.1.0"'
+manifest_has "A: http://schemas.android.com/apk/res/android:versionCode(0x0101021b)=$EXPECTED_VERSION_CODE"
+manifest_has "A: http://schemas.android.com/apk/res/android:versionName(0x0101021c)=\"$EXPECTED_VERSION_NAME\""
 manifest_has 'A: http://schemas.android.com/apk/res/android:allowBackup(0x01010280)=false'
 manifest_has 'A: http://schemas.android.com/apk/res/android:usesCleartextTraffic(0x010104ec)=false'
 manifest_has 'A: http://schemas.android.com/apk/res/android:dataExtractionRules'
