@@ -25,8 +25,9 @@ import java.time.Instant
  * suspend: the whole thing is exercised from `src/test` against captured fixtures, which is the only
  * cheap place to test a parser whose upstream can change without warning.
  *
- * Everything here was derived from real captured responses (see `docs/research/`), including four
- * things that are easy to get wrong and expensive to discover on a TV:
+ * Everything here was derived from real captured responses — the sanitized ones in
+ * `app/src/test/resources/fixtures/` are what the tests still run against — including four things
+ * that are easy to get wrong and expensive to discover on a TV:
  *
  *  1. **Photos carry their URL in `media.url`, and only if `url` was requested in `media.fields`.**
  *     Omit it and every photo silently has nowhere to load from.
