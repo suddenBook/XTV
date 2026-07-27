@@ -110,6 +110,28 @@ class PurchasePersistenceTest {
         assertEquals(null, (store.read() as PrivateStateRead.Ready).state.ledger.pendingOperation)
     }
 
+    /**
+     * Visible offers must be buyable, with no gap in between.
+     *
+     * Routing the startup read through the reload path once made this fail: that path holds the
+     * operation claim until its caller's `finally`, which runs *after* the snapshot already says
+     * READY with offers on it. Pressing an offer inside that window came back busy — on screen, a
+     * card that does nothing. Three contract tests caught it only on a slow CI runner, so this
+     * asserts the invariant directly rather than leaving it to a race.
+     */
+    @Test
+    fun `an offer is buyable the instant it becomes visible`() = runBlocking {
+        repeat(25) {
+            val purchase = purchase(provisioned())
+            val token = purchase.awaitReady().offers.first().token
+
+            val result = purchase.dispatch(PurchaseCommand.Buy(token))
+
+            assertTrue("attempt $it was refused: $result", result is DispatchResult.Accepted)
+            purchase.awaitTerminal()
+        }
+    }
+
     @Test
     fun `an unreadable envelope advances the revision so the failure is observable`() = runBlocking {
         // The revision is what observers key their reconciliation on. Published under a stale one,

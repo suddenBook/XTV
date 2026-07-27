@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class DefaultReelPurchase(
@@ -33,15 +35,27 @@ class DefaultReelPurchase(
     private val revision = AtomicLong(0)
     private val active = AtomicReference<Active?>(null)
     private val reloadRequested = AtomicBoolean(false)
+
+    /**
+     * Serializes the initial read against any later reload.
+     *
+     * Both run on the default dispatcher, so without this an unclaimed startup read can finish
+     * after a reload triggered by provisioning and publish the older state over the newer one.
+     * A mutex rather than the operation claim: this must order two reads, not make the app look
+     * busy to someone pressing a button.
+     */
+    private val loadMutex = Mutex()
     private val _state = MutableStateFlow(loadingSnapshot())
 
     override val state: StateFlow<PurchaseSnapshot> = _state.asStateFlow()
 
     init {
-        // Through the same claim an explicit reload takes, not a bare launch. Both run on the
-        // default dispatcher, so an unclaimed initial read can otherwise finish after a reload
-        // triggered by provisioning and publish the older state over the newer one.
-        dispatchLocalReload()
+        // Deliberately not through dispatchLocalReload(). That takes the `active` claim, and the
+        // claim outlives the publish that makes offers visible — releasing it happens in the
+        // caller's `finally`, after state already says READY. Pressing an offer in that window is
+        // rejected as busy, which on screen is a card that does nothing. Ordering against a
+        // concurrent reload is handled by loadMutex instead, which costs no such window.
+        applicationScope.launch { initializeFromLocalState() }
     }
 
     override fun dispatch(command: PurchaseCommand): DispatchResult = when (command) {
@@ -215,7 +229,7 @@ class DefaultReelPurchase(
      * checkpoint or a provisioning commit can land between the read and any write, the recovery
      * decision is re-taken *inside* the transaction rather than carried across from the read.
      */
-    private suspend fun initializeFromLocalState() {
+    private suspend fun initializeFromLocalState() = loadMutex.withLock {
         try {
             val loaded = store.read()
             if (loaded.pending == null) {
