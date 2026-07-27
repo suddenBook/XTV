@@ -1,21 +1,21 @@
-name: Verify and release XTV v1.3.0
+name: Build and release XTV
 
 on:
   push:
-    tags:
-      - v1.3.0
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-v1.3.0
+  group: release-main
   cancel-in-progress: false
 
 jobs:
   release:
-    name: Verify and publish immutable signed APK
+    name: Verify and publish signed APK
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production-release
@@ -26,25 +26,24 @@ jobs:
       artifact-metadata: write
 
     steps:
-      - name: Check out immutable tag
+      - name: Check out release commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Require the exact v1.3.0 tag
+      - name: Require an exact main branch commit
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF_TYPE" != "tag" || "$GITHUB_REF_NAME" != "v1.3.0" ]]; then
-            echo "Releases are allowed only from the exact v1.3.0 tag." >&2
+          if [[ "$GITHUB_REF_TYPE" != "branch" || "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "Releases are allowed only from the main branch." >&2
             exit 1
           fi
-          tag_commit="$(git rev-parse 'refs/tags/v1.3.0^{commit}')"
           event_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
           checked_out_commit="$(git rev-parse 'HEAD^{commit}')"
-          if [[ "$tag_commit" != "$event_commit" || "$tag_commit" != "$checked_out_commit" ]]; then
-            echo "v1.3.0 does not resolve to the checked-out commit." >&2
+          if [[ "$event_commit" != "$checked_out_commit" ]]; then
+            echo "The checked-out commit does not match the triggering commit." >&2
             exit 1
           fi
 
@@ -88,22 +87,54 @@ jobs:
           ast.parse(Path("tools/phase0/sanitize_fixtures.py").read_text(encoding="utf-8"))
           PY
 
-      - name: Verify release version
+      - name: Read release version
         id: version
         shell: bash
         run: |
           set -euo pipefail
           version_name="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' app/build.gradle.kts | head -n 1)"
           version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' app/build.gradle.kts | head -n 1)"
-          if [[ "$version_name" != "1.3.0" || "$version_code" != "5" ]]; then
-            echo "The v1.3.0 tag must contain versionName 1.3.0 and versionCode 5." >&2
+          if [[ ! "$version_name" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
+            echo "versionName is missing or is unsafe for a tag and APK filename: $version_name" >&2
             exit 1
           fi
-          echo "name=$version_name" >> "$GITHUB_OUTPUT"
-          echo "code=$version_code" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version_name" >> "$GITHUB_OUTPUT"
-          echo "apk=XTV-v$version_name.apk" >> "$GITHUB_OUTPUT"
-          echo "mapping=XTV-v$version_name-r8-mapping.txt.gz" >> "$GITHUB_OUTPUT"
+          if [[ ! "$version_code" =~ ^[1-9][0-9]*$ ]]; then
+            echo "versionCode must be a positive integer: $version_code" >&2
+            exit 1
+          fi
+          {
+            echo "name=$version_name"
+            echo "code=$version_code"
+            echo "tag=v$version_name"
+            echo "apk=XTV-v$version_name.apk"
+            echo "mapping=XTV-v$version_name-r8-mapping.txt.gz"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check release version availability
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git check-ref-format "refs/tags/$TAG"
+          git fetch --force --tags origin
+
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            tag_commit="$(git rev-parse "refs/tags/$TAG^{commit}")"
+            event_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+            if [[ "$tag_commit" != "$event_commit" ]]; then
+              echo "$TAG already points to $tag_commit." >&2
+              echo "Bump versionName and versionCode before publishing another commit." >&2
+              exit 1
+            fi
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists and will not be overwritten." >&2
+            echo "Bump versionName and versionCode before publishing another commit." >&2
+            exit 1
+          fi
 
       - name: Run unit tests and lint
         shell: bash
@@ -152,6 +183,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          umask 077
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
             if [[ -z "${!name}" ]]; then
               echo "Missing required repository secret: $name" >&2
@@ -203,11 +235,6 @@ jobs:
           fi
           sha256sum "$APK_NAME" > "$APK_NAME.sha256"
 
-      - name: Attest signed APK provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
-        with:
-          subject-path: ${{ steps.version.outputs.apk }}
-
       - name: Remove decoded signing keystore
         if: always()
         shell: bash
@@ -217,10 +244,15 @@ jobs:
             shred -u "$keystore" 2>/dev/null || rm -f -- "$keystore"
           fi
 
+      - name: Attest signed APK provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: ${{ steps.version.outputs.apk }}
+
       - name: Upload verified workflow artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: XTV-v1.3.0
+          name: XTV-v${{ steps.version.outputs.name }}
           path: |
             ${{ steps.version.outputs.apk }}
             ${{ steps.version.outputs.apk }}.sha256
@@ -232,40 +264,62 @@ jobs:
         shell: bash
         env:
           APK_NAME: ${{ steps.version.outputs.apk }}
-          MAPPING_NAME: ${{ steps.version.outputs.mapping }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
         run: |
           set -euo pipefail
           commit="$(git rev-parse 'HEAD^{commit}')"
+          apk_sha256="$(cut -d ' ' -f 1 "$APK_NAME.sha256")"
+          # The single-quoted backticks below are intentional Markdown code spans.
+          # shellcheck disable=SC2016
           {
-            printf 'XTV v1.3.0 (version code 5)\n\n'
+            printf 'Automated release for v%s (X TV).\n\n' "$VERSION_NAME"
+            printf -- '- Version name: %s\n' "$VERSION_NAME"
+            printf -- '- Version code: %s\n' "$VERSION_CODE"
             printf -- '- Commit: `%s`\n' "$commit"
             printf -- '- APK: `%s`\n' "$APK_NAME"
-            printf -- '- SHA-256: see `%s.sha256`\n' "$APK_NAME"
-            printf -- '- R8 mapping: `%s` (maintainer crash deobfuscation)\n' "$MAPPING_NAME"
+            printf -- '- SHA-256: `%s`\n' "$apk_sha256"
             printf -- '- Signer certificate SHA-256: `9ebbd0a688de30aedfe6b98a32c16e3d3579733d3581bbbf4de240648233c10b`\n'
             printf -- '- Provenance: `gh attestation verify %s --repo %s`\n\n' "$APK_NAME" "$GITHUB_REPOSITORY"
             printf 'The APK contains no X credentials. Provision only over USB or authenticated Wireless Debugging/TLS using `tools/provision.sh`; plaintext legacy `adb tcpip 5555` is rejected.\n\n'
             printf 'Every timeline request is a paid request, quoted before you accept it. The X Developer Console is the only billing control and must have its own hard limit configured before use.\n'
           } > release-notes.md
 
-      - name: Create non-overwriting GitHub release
+      - name: Create GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           APK_NAME: ${{ steps.version.outputs.apk }}
-          MAPPING_NAME: ${{ steps.version.outputs.mapping }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; this workflow never edits or overwrites it." >&2
+          git fetch --force --tags origin
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG was created while this workflow was building." >&2
             exit 1
           fi
+
+          if ! git show-ref --verify --quiet "refs/tags/$TAG"; then
+            gh api \
+              --method POST \
+              "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/tags/$TAG" \
+              -f "sha=$GITHUB_SHA" \
+              >/dev/null
+          fi
+
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          tag_commit="$(git rev-parse "refs/tags/$TAG^{commit}")"
+          event_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          if [[ "$tag_commit" != "$event_commit" ]]; then
+            echo "$TAG points to $tag_commit, not the release commit $event_commit." >&2
+            exit 1
+          fi
+
           gh release create "$TAG" \
             "$APK_NAME" \
-            "$APK_NAME.sha256" \
-            "$MAPPING_NAME" \
-            "$MAPPING_NAME.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$TAG" \
             --notes-file release-notes.md \
