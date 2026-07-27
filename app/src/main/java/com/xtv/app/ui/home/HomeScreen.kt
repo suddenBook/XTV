@@ -10,300 +10,430 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.xtv.app.R
-import com.xtv.app.core.budget.Ordinals
-import com.xtv.app.core.budget.SpendGuard
-import androidx.tv.material3.Button
 import androidx.tv.material3.Card
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import kotlinx.coroutines.delay
-
-private val Accent = Color(0xFF1D9BF0)
-
-/**
- * How much of the timeline one reel buys.
- *
- * The unit is **posts read**, because that is the unit X bills. Item counts are estimates from the
- * measured video share of this timeline (~60%), and are labelled "about" for exactly that reason.
- */
-enum class ReelSize(val labelRes: Int, val posts: Int) {
-    SHORT(R.string.size_short, 30),
-    STANDARD(R.string.size_standard, 60),
-    LONG(R.string.size_long, 100);
-
-    val estimatedItems: Int get() = (posts * 0.6).toInt()
-    val maxCostUsd: Double get() = posts * SpendGuard.PRICE_PER_POST
-}
-
-data class HomeState(
-    val resumeRemaining: Int?,
-    val resumeTotal: Int?,
-    val spentText: String,
-    val capText: String,
-    /** Against the **local** monthly tally, never X's project-wide figure. See [SpendGuard.State]. */
-    val budgetExceeded: Boolean,
-    /** True when the spend figure came from X's usage meter rather than the local tally. */
-    val spendAuthoritative: Boolean = false,
-    /** Day X's period rolls over on. Only ever set alongside [spendAuthoritative]. */
-    val resetDay: Int? = null,
-    val note: String? = null,
-)
+import com.xtv.app.R
+import com.xtv.app.core.purchase.OfferId
+import com.xtv.app.core.purchase.OfferToken
+import com.xtv.app.core.purchase.PurchaseOperation
+import com.xtv.app.core.purchase.PurchaseSnapshot
+import com.xtv.app.core.purchase.ReelOffer
+import com.xtv.app.core.purchase.ReelStatus
+import com.xtv.app.ui.common.XtvDialog
+import com.xtv.app.ui.common.rememberInitialFocus
+import com.xtv.app.ui.notice.InlineNotice
+import com.xtv.app.ui.notice.LoudNotice
+import com.xtv.app.ui.notice.Notice
+import com.xtv.app.ui.notice.NoticeWeight
+import com.xtv.app.ui.theme.XtvPalette
+import com.xtv.app.ui.theme.XtvSpacing
+import com.xtv.app.ui.theme.XtvText
 
 /**
- * The front door.
+ * The console.
  *
- * **Opening the app never spends.** Every fetch is behind a press here — the card states what it
- * will cost before the money leaves. That is why the primary action says "about 36 items" rather
- * than a real count: knowing the real count would already require the purchase.
+ * Deliberately without imagery. What this app plays is a private Following timeline, and the home
+ * screen is the one that sits lit in a living room while nobody is using it; putting the content
+ * there would make someone's timeline into ambient wallpaper. `FLAG_SECURE` stops a screenshot, not
+ * a person walking in.
  *
- * There is no navigation rail. With a single source there is nothing to choose between, and a rail
- * would be ceremonial chrome plus one more place for D-pad focus to get lost.
+ * Two rules shape the layout:
  *
- * Layout note: the overscan inset lives on an inner container, never on the root. Padding the root
- * makes a full-screen scrim stop short of the panel edges, which is how the exit dialog ended up
- * with an uncovered border.
+ * **Nothing on this screen is dead.** An entry that means nothing in the current state is not
+ * drawn — not greyed out. The screen used to disagree with itself about this: the resume card
+ * vanished without a reel, the grid card stayed and went to 35% alpha, and the offer row was
+ * replaced wholesale by a sentence. First launch showed a card labelled "See the whole reel" that
+ * could never be pressed.
+ *
+ * **The row grid is fixed at three columns even when there are fewer than three things.** Absent
+ * entries leave their column empty rather than letting the survivors stretch, so a card is the same
+ * size in every state and the two rows stay aligned with each other. The previous 680 / 240+300 /
+ * 240×3 widths could not line up at any screen size.
  */
 @Composable
 fun HomeScreen(
-    state: HomeState,
-    onBuild: (ReelSize) -> Unit,
-    onResume: () -> Unit,
+    state: PurchaseSnapshot,
+    notice: Notice?,
+    diagnosticsAvailable: Boolean,
+    onDismissNotice: () -> Unit,
+    onBuild: (OfferToken) -> Unit,
+    onContinue: () -> Unit,
+    onReplay: () -> Unit,
     onOpenGrid: () -> Unit,
-    onOpenDiagnostics: () -> Unit = {},
-    onExitApp: () -> Unit = {},
+    onOpenSettings: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+    onExitApp: () -> Unit,
 ) {
     var confirmExit by remember { mutableStateOf(false) }
-    var showBudgetWarning by remember(state.budgetExceeded) { mutableStateOf(state.budgetExceeded) }
-    // Home is the root, so Back here is the way out of the app — with a confirmation, because a
-    // stray Back on a remote should not dump you to the launcher mid-evening.
     BackHandler(enabled = !confirmExit) { confirmExit = true }
 
-    val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { repeat(5) { runCatching { firstFocus.requestFocus() }; delay(60) } }
+    val reel = state.currentReel
+    val busy = state.operation is PurchaseOperation.Running
+    val loud = notice?.takeIf { it.weight == NoticeWeight.LOUD }
 
-    Box(Modifier.fillMaxSize().background(Color(0xFF0E0E0E))) {
-        Box(Modifier.fillMaxSize().padding(PaddingValues(horizontal = 48.dp, vertical = 27.dp))) {
-            Column(
-                Modifier
-                    .align(Alignment.CenterStart)
-                    // While the dialog is up the content stays visible but leaves the focus graph
-                    // entirely. `focusGroup()` alone only groups — it does not stop focus search
-                    // from descending into the group, which is how LEFT from the leftmost dialog
-                    // button landed on a card underneath. Making the group unfocusable is what
-                    // makes the dialog actually modal.
-                    .focusGroup()
-                    .focusProperties { canFocus = !confirmExit && !showBudgetWarning },
-            ) {
-                Text("X TV", style = MaterialTheme.typography.headlineMedium, color = Accent)
-                Spacer(Modifier.height(24.dp))
+    // Only a dialog takes the screen out of play. A loud notice must NOT — it lives inside this
+    // column, so blocking focus here would also block its own dismiss button and leave the viewer
+    // with no way out but to quit the app.
+    val interactive = !confirmExit
 
-                val hasReel = state.resumeRemaining != null && state.resumeRemaining > 0
-                if (hasReel) {
-                    // Resuming is free, and saying so removes the hesitation about pressing it.
-                    PrimaryCard(
-                        title = stringResource(R.string.home_resume_title),
-                        subtitle = stringResource(R.string.home_resume_subtitle, state.resumeRemaining ?: 0, state.resumeTotal ?: 0),
-                        onClick = onResume,
-                        modifier = Modifier.focusRequester(firstFocus),
-                    )
-                    Spacer(Modifier.height(14.dp))
-                }
+    // Never the offer cards. A remote sat on at the wrong moment should not be able to spend money,
+    // and on first launch — no reel, so no resume card — the old first stop was the cheapest offer.
+    // While a loud notice is up, nothing here claims focus: it belongs to the notice.
+    val autoFocus = interactive && loud == null
+    val primaryFocus = rememberInitialFocus(reel?.id, enabled = autoFocus && reel != null)
+    val secondaryFocus = rememberInitialFocus(reel?.id, enabled = autoFocus && reel == null)
 
-                // Free actions sit with the reel they act on, above the paid options — nothing here
-                // costs anything, so it should not be the thing you scroll past money to reach.
-                SecondaryRow(onOpenGrid, onOpenDiagnostics, gridEnabled = hasReel)
-
-                Spacer(Modifier.height(24.dp))
-                Text(
-                    stringResource(if (hasReel) R.string.home_build_new else R.string.home_build_first),
-                    style = if (hasReel) MaterialTheme.typography.titleSmall
-                    else MaterialTheme.typography.titleLarge,
-                    color = if (hasReel) Color.White.copy(alpha = 0.5f) else Color.White,
+    Box(Modifier.fillMaxSize().background(XtvPalette.Background)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(
+                    PaddingValues(
+                        horizontal = XtvSpacing.ScreenH,
+                        vertical = XtvSpacing.ScreenV,
+                    ),
                 )
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ReelSize.entries.forEachIndexed { index, size ->
-                        SizeCard(
-                            size = size,
-                            enabled = !state.budgetExceeded,
-                            onClick = { onBuild(size) },
-                            modifier = if (index == 1 && !hasReel) Modifier.focusRequester(firstFocus)
-                            else Modifier,
+                .focusGroup()
+                // `canFocus` is only ever used to switch this subtree OFF. Setting it to `true` on
+                // a focus group makes the group itself a focus target, so a DOWN press out of the
+                // row above landed on a container that draws nothing — focus visibly disappeared,
+                // and UP could not find its way back. The previous version hid this behind explicit
+                // up/down/left/right wiring on every single card.
+                .then(
+                    if (interactive) Modifier else Modifier.focusProperties { canFocus = false },
+                ),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                stringResource(R.string.app_name),
+                style = MaterialTheme.typography.headlineMedium,
+                color = XtvPalette.Accent,
+            )
+            Spacer(Modifier.height(XtvSpacing.Section))
+
+            if (reel != null) {
+                val completed = reel.status == ReelStatus.COMPLETED
+                PrimaryCard(
+                    title = stringResource(
+                        if (completed) R.string.home_replay else R.string.home_continue,
+                    ),
+                    // No "N of M left" while a batch is in progress. It counted the wrong thing:
+                    // the index is a cursor, not a high-water mark — stepping back moves it back —
+                    // so a subtraction reads as unwatched items that are not unwatched. The grid
+                    // marks each item individually, which is the truthful version of the question.
+                    detail = if (completed) {
+                        pluralStringResource(R.plurals.home_replay_sub, reel.total, reel.total)
+                    } else {
+                        null
+                    },
+                    onClick = if (completed) onReplay else onContinue,
+                    enabled = !busy,
+                    modifier = Modifier.focusRequester(primaryFocus),
+                )
+                Spacer(Modifier.height(XtvSpacing.Row))
+            }
+
+            ThreeColumnRow(
+                buildList {
+                    // Grid is the only route to the content, so it exists exactly when content does.
+                    reel?.let { current ->
+                        add {
+                            CompactCard(
+                                label = pluralStringResource(
+                                    R.plurals.home_all,
+                                    current.total,
+                                    current.total,
+                                ),
+                                onClick = onOpenGrid,
+                                enabled = !busy,
+                            )
+                        }
+                    }
+                    add {
+                        CompactCard(
+                            label = stringResource(R.string.home_settings),
+                            onClick = onOpenSettings,
+                            enabled = !busy,
+                            modifier = if (reel == null) {
+                                Modifier.focusRequester(secondaryFocus)
+                            } else {
+                                Modifier
+                            },
                         )
                     }
-                }
+                    // Nothing has gone wrong yet, so there is nothing to diagnose.
+                    if (diagnosticsAvailable) {
+                        add {
+                            CompactCard(
+                                label = stringResource(R.string.home_diagnostics),
+                                onClick = onOpenDiagnostics,
+                                enabled = !busy,
+                            )
+                        }
+                    }
+                },
+            )
 
+            Spacer(Modifier.height(XtvSpacing.Section))
 
-            }
-
-            // Always visible, never in the way. Explicitly an estimate: the real number lives in the
-            // developer console, and implying otherwise would be a lie about someone's money.
-            Column(Modifier.align(Alignment.BottomStart)) {
-                state.note?.let {
-                    Text(it, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.6f))
-                    Spacer(Modifier.height(4.dp))
-                }
-                // Only the money spent. The ceiling is a tripwire, not a goal, so it stays out of
-                // sight until it actually fires — a permanent "x / 20" invites treating 20 as a target.
-                //
-                // The two wordings are not decoration. X's figure covers X's own period, ending on
-                // `cap_reset_day`; the fallback covers a calendar month. Presenting either in the
-                // other's sentence would state a number over a window it was never measured across.
-                val resetOn = state.resetDay?.let {
-                    Ordinals.dayOfMonth(it, stringResource(R.string.ordinal_style))
-                }
+            if (loud != null) {
+                // Takes the place of the offers rather than stacking above them: the message is
+                // about a purchase that produced nothing, and re-offering the same thing under it
+                // is both crowded and tone-deaf. Dismissing brings the offers back.
+                LoudNotice(notice = loud, onDismiss = onDismissNotice)
+            } else {
                 Text(
-                    when {
-                        state.spendAuthoritative && resetOn != null ->
-                            stringResource(R.string.home_spend_period_reset, state.spentText, resetOn)
-                        state.spendAuthoritative ->
-                            stringResource(R.string.home_spend_period, state.spentText)
-                        else -> stringResource(R.string.home_spend_estimate, state.spentText)
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White.copy(alpha = 0.45f),
+                    stringResource(R.string.home_get_new),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = XtvText.Secondary,
+                )
+                Spacer(Modifier.height(XtvSpacing.Heading))
+                Offers(state = state, busy = busy, onBuild = { onBuild(it.token) })
+            }
+        }
+
+        if (loud == null) {
+            notice?.let {
+                InlineNotice(
+                    notice = it,
+                    onExpire = onDismissNotice,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(
+                            start = XtvSpacing.ScreenH,
+                            bottom = XtvSpacing.ScreenV,
+                            end = XtvSpacing.ScreenH,
+                        ),
                 )
             }
         }
-
-        // Outside the padded container, so the scrim reaches the panel edges.
-        if (confirmExit) {
-            ExitConfirm(onConfirm = onExitApp, onDismiss = { confirmExit = false })
-        }
-        // Only ever appears once the ceiling is actually crossed.
-        if (showBudgetWarning) {
-            BudgetExceeded(state) { showBudgetWarning = false }
-        }
     }
+
+    if (confirmExit) {
+        XtvDialog(
+            title = stringResource(R.string.exit_title),
+            body = stringResource(R.string.exit_body),
+            dismissLabel = stringResource(R.string.exit_cancel),
+            onDismiss = { confirmExit = false },
+            confirmLabel = stringResource(R.string.exit_confirm),
+            onConfirm = onExitApp,
+        )
+    }
+}
+
+@Composable
+private fun Offers(
+    state: PurchaseSnapshot,
+    busy: Boolean,
+    onBuild: (ReelOffer) -> Unit,
+) {
+    // Pressing an offer used to change almost nothing on screen: the card stayed put and a
+    // 0.7-alpha "Building…" appeared in the far corner, which from three metres is no feedback at
+    // all. The row the viewer just pressed is now the thing that reports back.
+    //
+    // An empty offer list means the same thing as `busy` now that the set is fixed at three: a
+    // request is in flight, or its result is still being acknowledged. Drawing nothing for that
+    // second window would leave a hole under the heading after every purchase.
+    if (busy || state.offers.isEmpty()) {
+        WorkingRow()
+        return
+    }
+    ThreeColumnRow(
+        state.offers.map { offer ->
+            { OfferCard(offer = offer, sizeName = offer.id.labelRes(), onClick = { onBuild(offer) }) }
+        },
+    )
+}
+
+@Composable
+private fun WorkingRow() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(28.dp),
+            color = XtvPalette.Accent,
+            strokeWidth = 3.dp,
+        )
+        Text(
+            stringResource(R.string.notice_working),
+            style = MaterialTheme.typography.titleMedium,
+            color = XtvText.Primary,
+            modifier = Modifier.padding(start = XtvSpacing.Gap),
+        )
+    }
+}
+
+private fun OfferId.labelRes(): Int = when (this) {
+    OfferId.SHORT -> R.string.size_short
+    OfferId.STANDARD -> R.string.size_standard
+    OfferId.LONG -> R.string.size_long
 }
 
 /**
- * Free actions. Uses [Card], like the paid options below, so focus reads as a border and lift. A
- * `Surface` fills solid white when focused, which on a TV looks like the button has already been
- * pressed rather than merely selected.
- */
-@Composable
-private fun SecondaryRow(onOpenGrid: () -> Unit, onOpenDiagnostics: () -> Unit, gridEnabled: Boolean) {
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Card(onClick = { if (gridEnabled) onOpenGrid() }, modifier = Modifier.width(240.dp)) {
-            Text(
-                stringResource(R.string.home_open_grid),
-                style = MaterialTheme.typography.titleSmall,
-                color = Color.White.copy(alpha = if (gridEnabled) 0.9f else 0.35f),
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-            )
-        }
-        // Visible, not hidden behind a long-press: when the app shows nothing, this screen is the
-        // only way to find out why, and an undiscoverable debugger is no debugger.
-        Card(onClick = onOpenDiagnostics, modifier = Modifier.width(240.dp)) {
-            Text(
-                stringResource(R.string.home_history),
-                style = MaterialTheme.typography.titleSmall,
-                color = Color.White.copy(alpha = 0.7f),
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun SizeCard(size: ReelSize, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Card(onClick = { if (enabled) onClick() }, modifier = modifier.width(220.dp)) {
-        Column(Modifier.padding(20.dp)) {
-            Text(stringResource(size.labelRes), style = MaterialTheme.typography.titleLarge, color = Color.White)
-            Spacer(Modifier.height(6.dp))
-            // "about", because the exact yield is only knowable after paying for the posts.
-            Text(
-                stringResource(R.string.size_estimate, size.estimatedItems),
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White.copy(alpha = 0.8f),
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                stringResource(R.string.size_cost, SpendGuard.usd(size.maxCostUsd)),
-                style = MaterialTheme.typography.labelLarge, color = Accent,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PrimaryCard(title: String, subtitle: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Card(onClick = onClick, modifier = modifier.width(680.dp)) {
-        Column(Modifier.padding(horizontal = 28.dp, vertical = 22.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = Color.White)
-            Spacer(Modifier.height(6.dp))
-            Text(subtitle, style = MaterialTheme.typography.bodyLarge, color = Color.White.copy(alpha = 0.7f))
-        }
-    }
-}
-
-@Composable
-private fun BudgetExceeded(state: HomeState, onDismiss: () -> Unit) {
-    val focus = remember { FocusRequester() }
-    BackHandler { onDismiss() }
-    Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.75f)).focusGroup(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(Modifier.width(520.dp).background(Color(0xFF1E1E1E)).padding(28.dp)) {
-            Text(stringResource(R.string.home_budget_exceeded),
-                style = MaterialTheme.typography.titleLarge, color = Color(0xFFFFB300))
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.home_budget_exceeded_body, state.spentText, state.capText),
-                color = Color.White.copy(alpha = 0.75f))
-            Spacer(Modifier.height(24.dp))
-            Button(onClick = onDismiss, modifier = Modifier.focusRequester(focus)) {
-                Text(stringResource(R.string.home_budget_ok))
-            }
-        }
-    }
-    LaunchedEffect(Unit) { repeat(6) { runCatching { focus.requestFocus() }; delay(50) } }
-}
-
-/**
- * Full-screen "leave?" overlay — same shape as the sibling PHTV/91TV apps.
+ * A row of exactly three columns, however many things are in it.
  *
- * Focus starts on Cancel, so the destructive option is never one blind press away. Containment is
- * handled by the caller taking its content out of the focus graph; see [HomeScreen].
+ * Holding the column count fixed is what keeps a card the same size whether the screen is showing
+ * three offers or one, and keeps the secondary row aligned with the offer row underneath it. Absent
+ * entries leave an empty column instead of letting the survivors stretch.
  */
 @Composable
-private fun ExitConfirm(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    val cancelFocus = remember { FocusRequester() }
-    BackHandler { onDismiss() }
-    Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.75f)).focusGroup(),
-        contentAlignment = Alignment.Center,
+private fun ThreeColumnRow(cells: List<@Composable () -> Unit>) {
+    Row(
+        // No `focusRestorer` here. It exists to re-enter a lazy list where you left it, and on a
+        // fixed row of three it swallowed the entry instead: pressing DOWN out of the row above
+        // moved focus into the group, found nothing to restore, and left it parked on the container
+        // — which draws nothing, so focus visibly vanished and UP could not bring it back. Plain
+        // two-dimensional focus search handles a static row correctly on its own.
+        Modifier.fillMaxWidth().focusGroup(),
+        horizontalArrangement = Arrangement.spacedBy(XtvSpacing.Gap),
     ) {
-        Column(Modifier.width(440.dp).background(Color(0xFF1E1E1E)).padding(28.dp)) {
-            Text(stringResource(R.string.exit_title), style = MaterialTheme.typography.titleLarge, color = Color.White)
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.exit_body), color = Color.White.copy(alpha = 0.7f))
-            Spacer(Modifier.height(24.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(onClick = onConfirm) { Text(stringResource(R.string.exit_confirm)) }
-                Button(onClick = onDismiss, modifier = Modifier.focusRequester(cancelFocus)) { Text(stringResource(R.string.exit_cancel)) }
+        cells.take(COLUMNS).forEach { cell ->
+            Box(Modifier.weight(1f)) { cell() }
+        }
+        repeat(COLUMNS - cells.size.coerceIn(0, COLUMNS)) {
+            Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+private const val COLUMNS = 3
+
+@Composable
+private fun PrimaryCard(
+    title: String,
+    detail: String?,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        onClick = { if (enabled) onClick() },
+        modifier = modifier
+            .fillMaxWidth()
+            // Same height as an offer card: both are "press this to start watching".
+            .height(XtvSpacing.CardHeight)
+            .focusProperties { canFocus = enabled },
+    ) {
+        Row(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = XtvSpacing.CardPadH, vertical = XtvSpacing.CardPadV),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLarge, color = XtvText.Primary)
+            detail?.let {
+                Text(it, style = MaterialTheme.typography.bodyLarge, color = XtvText.Secondary)
             }
         }
     }
-    // Retry until Cancel actually takes focus: the dialog appears over an already-laid-out screen.
-    LaunchedEffect(Unit) { repeat(6) { runCatching { cancelFocus.requestFocus() }; delay(50) } }
+}
+
+/**
+ * Secondary entries. Same grid as the offers, deliberately shallower and quieter, because a row of
+ * three cards directly above another row of three cards otherwise reads as equal in importance.
+ */
+@Composable
+private fun CompactCard(
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        onClick = { if (enabled) onClick() },
+        modifier = modifier
+            .fillMaxWidth()
+            .focusProperties { canFocus = enabled },
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = XtvText.Secondary,
+            modifier = Modifier.padding(
+                horizontal = XtvSpacing.CompactPadH,
+                vertical = XtvSpacing.CompactPadV,
+            ),
+        )
+    }
+}
+
+/**
+ * One offer.
+ *
+ * The price is a range. It used to be two separate figures — an expected charge and a conservative
+ * reservation — printed side by side, which asks the viewer to arbitrate between two numbers the
+ * app itself could not choose between. The range says the same thing without the arithmetic: the
+ * bill lands somewhere in here and never above it.
+ */
+@Composable
+private fun OfferCard(
+    offer: ReelOffer,
+    sizeName: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        onClick = onClick,
+        // No `focusProperties` here. An offer is always selectable now, and setting `canFocus` to
+        // `true` on a card makes it a focus target in its own right — the same mistake documented
+        // on the containers above.
+        modifier = modifier
+            .fillMaxWidth()
+            .height(XtvSpacing.CardHeight),
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(
+                    horizontal = XtvSpacing.CardPadH,
+                    vertical = XtvSpacing.CardPadV,
+                ),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                stringResource(sizeName),
+                style = MaterialTheme.typography.titleLarge,
+                color = XtvText.Primary,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                pluralStringResource(
+                    R.plurals.offer_videos,
+                    offer.estimatedVideos,
+                    offer.estimatedVideos,
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+                color = XtvText.Secondary,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(
+                    R.string.offer_price_range,
+                    offer.charge.knownEstimate.formatUsd(),
+                    offer.charge.reservation.formatUsd(),
+                ),
+                style = MaterialTheme.typography.labelLarge,
+                color = XtvPalette.Accent,
+            )
+        }
+    }
 }

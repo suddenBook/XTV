@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Square launcher icon placeholder. -->
+<!--
+  Matches the launcher icons of the sibling TV apps on the same home row (PH TV, 91 TV): a flat
+  #111111 tile and one play mark in the app's own colour, on identical geometry. Nothing else — no
+  disc behind the mark, no second colour. Sitting next to each other, they read as a set.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"

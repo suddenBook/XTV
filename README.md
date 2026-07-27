@@ -1,311 +1,311 @@
 # XTV
 
-An Android TV client that turns your X (Twitter) Following timeline into **the current reel** — a
-finite, video-only run that plays end to end without touching the remote, and then stops.
+XTV is an Android TV app that buys a finite slice of an X Following timeline and plays only the
+videos found in that slice. It is deliberately not a general Twitter client: there is no text feed,
+infinite scroll, posting, or background timeline polling.
 
-It is not a Twitter client. There is no text feed, no browsing, no infinite scroll. You press one
-button, it buys a fixed slice of your timeline, and it plays the videos in it.
+> **Release status — v1.3.0 candidate:** the architecture and safeguards described here are the
+> release contract. The X Developer Console is the billing authority throughout.
 
-UI follows the system language: English, 简体中文, 繁體中文.
+English, 简体中文, and 繁體中文 follow the TV's system language.
 
----
+## Safety contract
 
-## What you need
+Every timeline request costs the owner of the X developer app real money, so **configure a hard
+spending limit in the X Developer Console before provisioning the TV.** That limit is the only
+thing that can actually stop a charge, and XTV does not attempt to be a second one.
 
-- An **Android TV** device running Android 11 or newer.
-- A **computer with `adb`** on it, on the same network as the TV. (`adb` ships in Android platform
-  tools; `brew install android-platform-tools`, `apt install adb`, or the Android SDK.)
-- **Node.js**, for X's `xurl` CLI in step 4.
-- An **X account** you can create a developer app on, with a little money in it. Reads are prepaid —
-  a night's watching is about 15–50 cents.
+Earlier versions kept a fixed $20 local guard per UTC month, which trimmed the offers it would make
+and demanded a confirmation past the line. It is gone. It could only ever disagree with the real
+limit — the figure it guarded was an estimate of one app's share of a project-wide bill — and the
+practical effect was an app rationing money its owner had already decided to spend.
 
-Setup takes about ten minutes and you only do it once. The steps are in order; each one produces
-something the next one needs.
+What remains is that nothing is bought without being priced first. Each offer is quoted as a
+**range**: the low end is the expected charge at the measured media density, the high end is a
+conservative upper bound, and the actual bill does not exceed it. One OK press accepts one immutable
+offer; it cannot dispatch the same purchase twice.
 
----
+Project usage shown in Settings is X's resource count for X's own reporting period, alongside the
+day of the month it resets. It is not a dollar balance and is never represented as one. Check
+`console.x.com` for actual charges, credits, and the hard limit.
 
-## 1. Turn on debugging on the TV
+XTV makes **no timeline request on cold launch**, and fetching a batch always requires accepting a
+priced offer. It does make exactly one metering call at launch: `GET /2/usage/tweets`, which returns
+the project's Post-read count and reset day. That endpoint fetches nothing to watch and cannot start
+a paid timeline read; without it, Settings opens on a stale figure and leaves keeping it honest to
+whoever remembers to press Refresh.
 
-XTV is sideloaded, so the TV has to accept a connection from your computer.
+Settings shows that count alongside what it costs, at `$0.005` per Post read. It covers the whole
+developer project — including any other tool using the same credentials — and X's period resets on
+its own `cap_reset_day`, not on the 1st. It is X's own meter, which is why it is the figure XTV
+shows rather than a private tally of its own.
 
-On Google TV / Android TV:
+## Requirements
 
-1. **Settings → System → About**, scroll to **Android TV OS build**, and press OK on it **seven
-   times**. It will say *"You are now a developer"*.
-2. **Settings → System → Developer options** → turn on **USB debugging**. If your device also lists
-   **Network debugging** or **Wireless debugging**, turn that on too.
-3. **Settings → Network & Internet** → select your network → note the TV's **IP address**.
+- Android TV / Google TV running Android 11 (API 30) or newer.
+- Android platform tools (`adb`) on a trusted computer.
+- USB debugging, or Android's paired **Wireless Debugging** (authenticated TLS).
+- Node.js and X's [`xurl`](https://github.com/xdevplatform/xurl) CLI.
+- Your own X developer app with pay-per-use credits and a Console hard limit.
 
-Menu names vary a little by manufacturer, but every Android TV has this behind the build-number tap.
+The assisted provisioning script accepts USB or paired Wireless Debugging. The original direct ADB
+injection workflow remains available for any exact serial already listed by `adb devices`.
 
-## 2. Connect adb to the TV
-
-```bash
-adb connect <tv-ip>:5555
-adb devices -l
-```
-
-The TV shows an **"Allow USB debugging?"** prompt the first time. Accept it, and tick *Always allow
-from this computer* so you do not have to do it again.
-
-You should see your TV listed as `device`:
-
-```
-List of devices attached
-192.168.1.4:5555     device product:kirkwood model:Google_TV_Streamer
-```
-
-If it says `unauthorized`, the prompt on the TV has not been accepted yet. If it says `offline` or
-nothing connects, some devices need to be told to listen first — plug the TV in over USB once and run
-`adb tcpip 5555`.
-
-> If you have more than one device connected, add `-s <tv-ip>:5555` to every `adb` command below.
-
-## 3. Create your X app
+## 1. Create and limit the X developer app
 
 At [console.x.com](https://console.x.com):
 
-1. Enable **pay-per-use** and top up credits. Reads are prepaid; with no balance the API returns HTTP
-   402 and XTV says so rather than pretending your timeline is empty.
-2. Create an app. Under **user authentication settings**:
-   - **Type of App: Native App** (a public client)
-   - **App permissions: Read** — XTV never writes anything
-   - **Callback URI:** `http://localhost:8080/callback`
-3. From **Keys and tokens**, copy two values and keep them somewhere for the next steps:
-   - the **Client ID**
-   - the app-only **Bearer Token**
+1. Enable pay-per-use, add only the credits you intend to use, and configure the Console's hard
+   spending limit.
+2. Create an app with OAuth 2.0 user authentication:
+   - type: **Native App**;
+   - permissions: **Read**;
+   - callback URI: `http://localhost:8080/callback`.
+3. Copy the OAuth 2.0 **Client ID** and app-only **Bearer Token**.
 
-> **Copy the Bearer Token exactly as shown.** It contains literal `%2F` and `%3D` characters. Those
-> are part of the string, not percent-encoding — "decoding" them produces a token X rejects with a
-> 401. Do not let a shell or a text editor rewrite them.
+The Bearer Token's literal `%2F` and `%3D` characters must not be URL-decoded. XTV does not use the
+Client Secret.
 
-> You will also be shown a **Client Secret**. XTV never uses it: a Native App is a public client, and
-> PKCE rather than a secret is what binds the authorization code. Ignore it.
+## 2. Authorize off-device
 
-## 4. Authorize your account
-
-This is the step that proves you own the account. Use [`xurl`](https://github.com/xdevplatform/xurl),
-X's own CLI, on your computer:
+XTV has no WebView and never asks for an X password. Authorization happens on the trusted computer:
 
 ```bash
 npm install -g @xdevplatform/xurl
-xurl auth apps add xtv --client-id '<client id>' --redirect-uri http://localhost:8080/callback
+xurl auth apps add xtv --client-id '<client-id>' \
+  --redirect-uri http://localhost:8080/callback
 xurl auth default xtv
 xurl auth oauth2
 ```
 
-`xurl auth oauth2` opens a browser and prints **OAuth2 authentication successful!** when you approve.
-If the machine has no browser, use `xurl auth oauth2 --headless` instead: it prints a URL to open
-anywhere, and you paste the redirected address back.
+Use `xurl auth oauth2 --headless` when the computer has no browser. `xurl` stores the rotating
+refresh token in `~/.xurl/auth.yml`; do not paste it into shell history.
 
-The refresh token lands in `~/.xurl/auth.yml`. You do not need to read it — the next step does.
+Refresh tokens rotate when exchanged. If provisioning reports that the candidate token was rejected,
+authorize again before retrying.
 
-> **The refresh token is single-use.** X issues a new one every time it is exchanged and immediately
-> retires the old one. If step 6 fails and you have to retry, run `xurl auth oauth2` again first: the
-> token in `auth.yml` will already have been spent.
+## 3. Establish a secure ADB transport
 
-## 5. Install XTV
-
-Download the APK from [Releases](../../releases), then:
+USB is simplest:
 
 ```bash
-adb install -r XTV-v1.0.apk
+adb devices -l
 ```
 
-`-r` reinstalls over an existing copy and **keeps your session**, so this is also how you update.
-
-## 6. Sign the TV in
-
-From the repository root:
+For Wireless Debugging, use the pairing and connection ports shown by the TV. They are not the
+legacy `5555` port:
 
 ```bash
-XTV_CLIENT_ID='<client id>' \
-XTV_BEARER='<bearer token>' \
-./tools/provision.sh <tv-ip>:5555
+adb pair <tv-ip>:<pairing-port>
+adb connect <tv-ip>:<connection-port>
+adb mdns services
 ```
 
-The script reads the refresh token out of `~/.xurl/auth.yml` for you, sends all three values to the
-app, and then checks that it actually worked. On success:
+For paired Wireless Debugging, the host-side mDNS list should show the exact serial under
+`_adb-tls-connect._tcp`. In every workflow, verify the intended serial with `adb devices` before
+continuing.
 
-```
-Provisioning 192.168.1.4:5555…
-Done. The token is now stored on the device; you will not need this again unless you
-uninstall, clear data, or install a build signed with a different key.
-```
+## 4. Install and provision
 
-If you would rather not use the script, the equivalent is one command — but you have to supply the
-refresh token yourself:
+Install the candidate APK:
 
 ```bash
-adb shell am start -n com.xtv.app/.MainActivity \
-    --es client_id '<client id>' \
-    --es refresh_token '<refresh token>' \
-    --es bearer '<app-only bearer token>'
+adb -s <secure-serial> install -r XTV-v1.3.0.apk
 ```
 
-All three are stored in the app's private storage on the device and never leave it. The OAuth session
-tokens are additionally encrypted with an AES-256-GCM key that lives in the device's hardware
-keystore; the client id and bearer are held as plain values in the same sandboxed storage.
+The public v0.1 update-lineage certificate SHA-256 is
+`9ebbd0a688de30aedfe6b98a32c16e3d3579733d3581bbbf4de240648233c10b`. Verify it against the
+published release provenance before provisioning; the script refuses any other installed signer.
 
-## Did it work?
-
-Look at the TV. You should see the XTV home screen: **Build a reel** with Short / Standard / Long
-cards, and along the bottom a line like
-
-```
-$2.75 this period · resets on the 26th
-```
-
-That last line is the proof that all three credentials are working — it is X's own spend figure, read
-back from your account.
-
-Press OK on **Short** to buy 30 posts (about 15 cents) and start watching.
-
-To see what the app thinks happened:
+Provision from the repository root, naming the exact `xurl` app and account so the script cannot
+silently choose another refresh token:
 
 ```bash
-adb logcat -d -s XTV:* XTV-API:* XTV-BUDGET:* XTV-DIAG:*
+XURL_APP='xtv' \
+XURL_USER='<authorized-x-account>' \
+./tools/provision.sh <secure-serial>
 ```
 
-The line beginning `start:` says which screen it chose and why.
+The script prompts for the client ID and reads the bearer without echo, keeping both out of shell
+history. All three credentials are mandatory. The script:
 
-## If something went wrong
+- refuses an ambiguous device, account, app, or insecure transport;
+- sends credentials only to XTV's DUMP-permission-protected provisioning entry point;
+- uses a unique request identifier and waits for that request's result;
+- verifies the candidate credentials before replacing the active account;
+- never prints credential values.
 
-| What you see | What it means | What to do |
-|---|---|---|
-| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | An XTV signed with a different key is already installed | `adb uninstall com.xtv.app`, then install again. This wipes the session, so redo steps 4 and 6. |
-| `adb: device unauthorized` | The debugging prompt on the TV was not accepted | Accept it on the TV, then `adb connect` again |
-| *"X rejected the refresh token"* | The token was already spent — they are single-use | `xurl auth oauth2`, then rerun step 6 |
-| *"Credentials stored, but there is no session"* | Same thing, caught a step later | `xurl auth oauth2`, then rerun step 6 |
-| Setup screen: *"no X API credentials yet"* | The client id did not arrive | Rerun step 6 and check `XTV_CLIENT_ID` is set |
-| Setup screen: *"missing the app-only Bearer Token"* | The bearer did not arrive | Rerun step 6 and check `XTV_BEARER` is set |
-| Spend line says *"this month · upper-bound estimate"* | The bearer is present but X rejected it — almost always because its `%2F`/`%3D` got decoded | Recopy it verbatim from Keys and tokens and rerun step 6. `adb logcat -d -s XTV-DIAG:*` shows the HTTP status. |
-| *"Your X account is out of API credits"* | No prepaid balance | Top up at console.x.com |
-| Home screen but nothing plays | The reel had no videos in it | Normal some nights — a timeline is mostly not video. Try a longer reel. |
+Successful provisioning transfers the rotating refresh-token chain into XTV's encrypted state. The
+source token left in `xurl` can then be stale; run `xurl auth oauth2` again before a later fresh
+provision if the app no longer has its stored session.
 
----
+The original direct ADB command is also supported, both for a cold start and while XTV is already
+running:
 
-## Why the APK ships empty
-
-**The released APK contains no credentials**, and that is not an inconvenience for its own sake. X
-bills API usage to the **owner of the developer app**, and OAuth does not move that invoice to
-whoever signs in. A build with someone's client id compiled into it would spend *their* credits for
-every user, and could drain their balance until their own app stopped working. There is no
-configuration that makes a shared build fair, so it ships with nothing.
-
-Launching it before setup is harmless: it shows the setup guide instead of failing.
-
-## Why all three credentials
-
-The client id and the refresh token are what fetch a timeline. The Bearer Token is what makes the
-spend figure true, and that is why it is not optional.
-
-Without it XTV can only estimate, by counting the posts it asked for. That estimate is an **upper
-bound** — X dedupes repeat reads of the same resource within a UTC day — and, worse, it covers a
-*calendar month*. X bills over its own period, ending on `cap_reset_day`, which for most accounts is
-not the 1st. So the two numbers describe different windows and are not comparable. For an app whose
-every button spends real money, a figure that is approximately right over the wrong month is not good
-enough.
-
-With the bearer, XTV reads `GET /2/usage/tweets` for X's own consumed-post count and says which
-period it covers. If that call ever fails the app falls back to the estimate and relabels it as one,
-so the two are never presented as the same number.
-
-Two caveats worth knowing. X publishes no billing or balance endpoint, so dollars are always that
-count times the published per-post price; `console.x.com` remains the real invoice. And the figure is
-*project*-wide — a script sharing the same credentials is included in it. That is why it is only ever
-displayed, never used to enforce XTV's own monthly ceiling, which is measured against what this app
-alone has spent.
-
-## What it costs
-
-Billing is per **post read**, not per video watched, and a timeline is mostly not video. On the
-timeline this was measured against, ~69% of posts carried media and ~60% of that media was video:
-
-| Reel | Posts read | ≈ videos | Cost |
-|---|---|---|---|
-| Short | 30 | ~18 | $0.15 |
-| Standard | 60 | ~36 | $0.30 |
-| Long | 100 | ~60 | $0.50 |
-
-One reel a night is roughly **$9/month**. A monthly ceiling (default $20) trims a request rather than
-refusing it, and only surfaces once it is actually crossed.
-
-Two things XTV will not do: fetch anything on launch, or fetch anything mid-reel. Every request sits
-behind a keypress that has already told you its price.
-
-## Remote
-
+```bash
+adb -s <serial> shell am start -n com.xtv.app/.MainActivity \
+  --es client_id '<client-id>' \
+  --es refresh_token '<refresh-token>' \
+  --es bearer '<app-only-bearer>'
 ```
-OK            pause / resume — always, regardless of what is on screen
+
+This compatibility entry forwards the three values into the same validation, token rotation, and
+atomic commit path used by `tools/provision.sh`. Use either workflow for a given refresh token, not
+both, because a successful exchange rotates that token.
+
+Reprovisioning the same X account and developer project preserves the current reel and cursor.
+Switching X account clears account-owned reel, cursor, and terminal state. The billing journal and
+usage cache belong to the developer project, so they remain when the project is unchanged; changing
+project clears those project-owned values.
+
+X's usage endpoint validates the app-only bearer but does not expose a stable project identifier.
+XTV therefore cannot prove that a valid bearer and OAuth client ID came from the same developer
+project. The operator must copy both from the same Console project.
+
+The complete private state—credentials, tokens, account identity, cursors, reels, playback progress,
+the billing journal, usage cache, and sanitized migration diagnostics—is stored in one
+atomic envelope encrypted with an Android Keystore AES-GCM key. It is excluded from cloud backup
+and device-to-device transfer. If the key is lost, XTV fails closed; restore the Keystore or confirm
+“Reset everything” before provisioning again.
+
+## Using XTV
+
+The home screen is a console, not a gallery: it deliberately shows no thumbnails, because it is the
+screen a TV sits on when nobody is using it, and a private Following timeline should not become
+ambient decoration in a living room. Entries that mean nothing in the current state are not drawn at
+all rather than greyed out, so a fresh install shows only the offers and **Settings**.
+
+Accept one offer to fetch a batch. The purchase continues in application scope even if the activity
+closes. Crash recovery charges only the exact `/users/me` exposure after identity dispatch, and
+charges the full reservation only after the timeline request may have been dispatched. XTV never
+silently retries a possibly paid page.
+
+A partial page is retained, and the player marks it while playing what arrived. An empty successful
+result keeps the previous batch but advances the paid cursor, and says so plainly — that
+is the one outcome where money left the account with nothing to show for it. If the API returns more
+resources than requested, XTV keeps and accounts for all of them without commenting on it.
+
+Finished batches remain available to watch again from the start. **All N** opens the grid, which
+marks what has been watched and which item is next. HOME pauses playback; returning restores the
+prior play intent. A failed playback checkpoint shows a warning and continues rather than trapping
+the viewer. The screen is kept awake only while video is actually playing.
+
+Remote controls:
+
+```text
+OK            pause / resume
+MEDIA keys    play / pause / next / previous
 UP / DOWN     previous / next video
-LEFT / RIGHT  seek ±10s
-BACK          first press shows the post; pressing it again leaves
+LEFT / RIGHT  seek -10s / +10s, acknowledged on screen
+BACK          reveal details, then return
 ```
 
-`MENU` is deliberately unused: Android TV does not guarantee remotes have one.
+**Settings** holds the money: the X project's Post-read count, what that costs at the current rate,
+the day X's period resets, and the two erasures. **Diagnostics** is a
+separate screen holding the dated rate card and the recent request log; it appears on the home
+screen only once there is something in it. Diagnostic output must never contain credential or signed
+media URLs.
 
----
+Two erasure levels are available:
 
-## Building it yourself
+- **Reset credentials** removes credentials and the live session while retaining the verified
+  account binding, videos, cursor, and billing journal for safe same-identity reprovisioning.
+- **Erase everything** removes credentials, videos, cursors, journals, and caches and requires
+  provisioning again.
+
+If a device has no usable credentials, the setup screen names which value is missing and shows a QR
+code pointing at this README. It deliberately does not reprint the commands below: they cannot be
+copied off a television, and every one of those states is fixed the same way — by running the setup
+script again from a computer.
+
+## Cost model
+
+Do not infer cost from video count. Billing is per Post read, and a Post can carry any number of
+videos or none. XTV's offer uses the current dated rate card and the exact request shape; the
+Developer Console remains authoritative.
+
+**For this request shape, only Post reads are billed.** A Console statement of 640 Post reads over
+21 requests came to `$3.22`: `640 x $0.005`, plus two `$0.010` User reads — one `/users/me` per
+provisioning. Authors arriving in `includes` are deduplicated away and expansions are not charged as
+separate Media reads, so an offer of thirty Posts is `$0.15`, not the `$0.54` a per-Post model of
+one User and 0.6 Media would predict. Published prices for those resources are unchanged and are
+still in the rate card; what was wrong was the assumed **quantity** of them, by a factor of 3.6.
+
+Offers are quoted as a range. The low end is that measured charge; the high end adds 20% headroom,
+so the top of the range stays an upper bound rather than a coin flip.
+
+The rate card is dated and its version is stamped into every offer token, then re-checked before
+dispatch. Correcting the card therefore invalidates any offer quoted under the old model instead of
+silently charging a new price for it. If the Console changes a rate, or evidence changes the
+quantity model, update the dated code-side rate card before creating new offers.
+
+## Failure guide
+
+| Symptom | Meaning / action |
+|---|---|
+| `tools/provision.sh` refuses port `5555` | Use the documented direct ADB compatibility command, or switch the assisted workflow to USB/paired Wireless Debugging. |
+| Device or `xurl` identity is ambiguous | Supply the exact ADB serial, `XURL_APP`, and `XURL_USER`. |
+| Refresh token rejected | Run `xurl auth oauth2` again, then reprovision. |
+| Developer Console reports no credits | Top up or stop; XTV does not bypass HTTP 402. |
+| Console hard limit reached | Change the Console limit only after consciously reviewing actual charges. |
+| API shape changed | Stop paid testing and inspect sanitized diagnostics before another purchase. |
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | The installed APK has another signer. Verify provenance before uninstalling; uninstalling erases private state. |
+
+## Building
 
 ```bash
-echo "sdk.dir=$HOME/Android/Sdk" >> local.properties
-./gradlew assembleDebug
+printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-Optionally bake your client id into a private build so you do not have to pass it every time. It is a
-public-client identifier rather than a secret, but it still bills to you — never put it in anything
-you publish:
+No build variant accepts or compiles X credentials. Client IDs, refresh tokens, and bearer tokens
+are runtime provisioning values only.
+
+Debug-only fixtures exercise UI and playback without network or real persistence. Fixture entry
+points do not exist in release builds.
+
+## Releasing v1.3.0
+
+Ordinary verification CI runs on pull requests and `main`: unit tests, release lint, a minified
+release build, generated credential checks, manifest security checks, and an unsigned-candidate
+SHA-256.
+
+The publishing workflow accepts only the exact `v1.3.0` tag and requires
+`versionName=1.3.0`, `versionCode=5`. It repeats the verification, verifies the signer against the
+public v0.1 certificate lineage, and emits the signed APK plus SHA-256 file. It also publishes a
+GitHub/Sigstore build-provenance attestation and the compressed R8 mapping needed to deobfuscate
+maintainer crash reports.
+
+After downloading a release, verify its workflow provenance with:
 
 ```bash
-echo "xtv.clientId=<client id>" >> local.properties   # git-ignored
+gh attestation verify XTV-v1.3.0.apk --repo <owner>/<repository>
 ```
 
-The refresh token and bearer are never build-time values: they arrive over adb and live only on the
-device.
+Configure the GitHub `production-release` environment with required reviewers and restrict it to
+the protected `v1.3.0` tag before enabling the publishing workflow. Workflow actions are pinned to
+reviewed commit SHAs, checkout does not retain repository credentials, and Gradle verifies resolved
+dependency artifacts against the reviewed checksums in `gradle/verification-metadata.xml`.
 
-To reproduce what a published build actually does — no compiled-in client id, so credentials injected
-over adb have nothing to fall back on — override the property with an empty value:
+If a GitHub release already exists for the tag, the workflow fails. It never edits release notes,
+moves the tag, or uploads with `--clobber`.
 
-```bash
-./gradlew assembleRelease -Pxtv.clientId=
-```
-
-### Releases
-
-`.github/workflows/release.yml` builds and publishes on every push to `main`. Repository secrets:
+Required repository secrets:
 
 | Secret | Purpose |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | Base64 of the signing keystore |
+| `ANDROID_KEYSTORE_BASE64` | Base64-encoded release keystore |
 | `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
-| `ANDROID_KEY_ALIAS` | Key alias |
-| `ANDROID_KEY_PASSWORD` | Key password |
+| `ANDROID_KEY_ALIAS` | Signing-key alias |
+| `ANDROID_KEY_PASSWORD` | Signing-key password |
 
-No X credentials are configured in CI, on purpose — see above.
+No X credentials belong in CI.
 
-### Development
+## Research notes
 
-```bash
-./gradlew testDebugUnitTest     # no network, no spend
-```
-
-The parser is tested against sanitised captures of real API responses in
-`app/src/test/resources/fixtures/`. To refresh them after an upstream change, capture with
-`tools/phase0/probe.sh` and run `tools/phase0/sanitize_fixtures.py` — it rewrites ids, handles, text
-and URLs, and refuses to write a file if any real URL survives. Raw captures are git-ignored; they
-are somebody's actual timeline.
-
-Play a fixture with no token and no spend:
-
-```bash
-adb shell am start -n com.xtv.app/.MainActivity --es fixture dead_links.json
-```
-
-`docs/research/` records why this is built on the official API rather than the reverse-engineered web
-endpoints, including the paths investigated and rejected. `docs/decisions.md` records what was
-deliberately left out, and why.
+[`docs/research/`](docs/research/) contains dated investigation notes, including rejected
+reverse-engineered web/API approaches. Each note has a status banner. They are historical evidence,
+not the current product contract; this README and tested code are authoritative.
 
 ## Licence
 

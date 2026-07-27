@@ -6,7 +6,6 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.memory.MemoryCache
 import coil3.request.crossfade
-import coil3.util.DebugLogger
 
 /**
  * Application entry point.
@@ -21,10 +20,20 @@ import coil3.util.DebugLogger
  * work across the video SurfaceView layer anyway, and a half-applied fade looks worse than a cut.
  */
 class XtvApplication : Application(), SingletonImageLoader.Factory {
+    lateinit var graph: XtvGraph
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+        graph = XtvGraph(this)
+    }
+
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
             .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.25).build() }
+            // Timeline media is private account state. Keep decoded lookahead only in memory; a
+            // plaintext URL/body cache must not outlive the process.
+            .diskCache(null)
             .crossfade(false)
-            .logger(DebugLogger())
             .build()
 }

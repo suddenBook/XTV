@@ -1,5 +1,9 @@
 # XTV Research 01 — Authenticating & signing X GraphQL requests (as of 2026-07-26)
 
+> **Status: ARCHIVED / REJECTED PATH.** This is a dated investigation of reverse-engineered web
+> GraphQL authentication. XTV v1.1.0 uses the official API and off-device OAuth provisioning; it
+> does not implement transaction-ID signing, cookie harvesting, or a login WebView.
+
 Evidence tags: **[V]** = verified in a primary source (code/issue quoted), **[L]** = likely (named reasoning),
 **[U]** = unknown, needs a live test. Nothing below is invented; every constant is quoted from source.
 

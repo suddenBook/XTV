@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase 0 —— 官方 X API v2 探测（走 xurl，token 自动刷新）
 #
-# 前置：xurl 已认证（见 docs/PHASE0.md）。验证：xurl /2/users/me
+# 前置：xurl 已认证（见仓库 README 的开发探测说明）。验证：xurl /2/users/me
 #
 # 用法：
 #   ./probe.sh bookmarks      # $0.001/条

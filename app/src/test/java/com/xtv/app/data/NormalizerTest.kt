@@ -190,4 +190,70 @@ class NormalizerTest {
         val result = Normalizer.parse(Json.parseToJsonElement("[]"))
         assertTrue("got $result", result is PageResult.UpstreamChanged)
     }
+
+    @Test
+    fun `missing data without an explicit zero result is upstream drift`() {
+        val result = Normalizer.parse(Json.parseToJsonElement("""{"meta":{"newest_id":"1"}}"""))
+
+        assertTrue("got $result", result is PageResult.UpstreamChanged)
+    }
+
+    @Test
+    fun `errors array without data cannot collapse into an empty success`() {
+        val result = Normalizer.parse(
+            Json.parseToJsonElement(
+                """{"errors":[{"status":429,"title":"Too Many Requests","detail":"slow down"}]}""",
+            ),
+        )
+
+        assertTrue("got $result", result is PageResult.RateLimited)
+    }
+
+    @Test
+    fun `data plus errors retains paid posts and marks the page partial`() {
+        val result = Normalizer.parse(
+            Json.parseToJsonElement(
+                """
+                {
+                  "data":[{"id":"t1","author_id":"u1","attachments":{"media_keys":[]}}],
+                  "errors":[{"status":503,"detail":"one expansion failed"}]
+                }
+                """.trimIndent(),
+            ),
+        ) as PageResult.Ok
+
+        assertEquals(1, result.postsRead)
+        assertTrue(com.xtv.app.core.model.PageWarning.PARTIAL_ERRORS in result.warnings)
+        assertNotNull(result.partialFailure)
+    }
+
+    @Test
+    fun `media numbering excludes entries that have no playable url`() {
+        val result = Normalizer.parse(
+            Json.parseToJsonElement(
+                """
+                {
+                  "data":[{
+                    "id":"t1","author_id":"u1",
+                    "attachments":{"media_keys":["3_m1","3_m2"]}
+                  }],
+                  "includes":{
+                    "media":[
+                      {"media_key":"3_m1","type":"video","width":1,"height":1,"variants":[]},
+                      {"media_key":"3_m2","type":"video","width":1,"height":1,
+                       "variants":[{"content_type":"video/mp4","bit_rate":1,"url":"https://x.invalid/v.mp4"}]}
+                    ],
+                    "users":[{"id":"u1","username":"u","name":"U"}]
+                  }
+                }
+                """.trimIndent(),
+            ),
+        ) as PageResult.Ok
+
+        assertEquals(1, result.items.size)
+        assertEquals(0, result.items.single().indexInPost)
+        assertEquals(1, result.items.single().countInPost)
+        assertEquals(1, result.stats.mediaDropped)
+        assertEquals(2, result.stats.mediaReturned)
+    }
 }

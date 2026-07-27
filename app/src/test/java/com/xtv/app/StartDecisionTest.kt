@@ -21,8 +21,11 @@ class StartDecisionTest {
     }
 
     @Test
-    fun `both credentials without a session ask for sign-in`() {
-        assertEquals(Start.NeedsLogin, decideStart(id, bearer, fixture = null, hasSession = false))
+    fun `both credentials without a session require secure reprovisioning`() {
+        assertEquals(
+            Start.NeedsSetup(MissingCredential.SESSION),
+            decideStart(id, bearer, fixture = null, hasSession = false),
+        )
     }
 
     @Test

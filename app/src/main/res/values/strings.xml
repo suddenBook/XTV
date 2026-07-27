@@ -1,73 +1,167 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (English). Android picks values-zh-rCN / values-zh-rTW automatically from the system
-     locale; there is deliberately no in-app language switcher. -->
+     locale; there is deliberately no in-app language switcher.
+
+     Two rules hold across this file:
+
+     1. No string is assembled from other strings. Every message is one complete sentence with its
+        own placeholders, even where that means four near-identical entries, because a separator
+        baked into a resource ("   ·   ") is a layout decision hiding in a translation file.
+     2. Nothing here names a part of the machine. "reel", "reservation", "offer", "candidate",
+        "cursor" and "journal" are precise words for the code to use about itself; on screen they
+        answer a question nobody asked. -->
 <resources>
-    <string name="app_name">X TV</string>
+    <string name="app_name" translatable="false">X TV</string>
+    <string name="repo_url" translatable="false">github.com/suddenBook/XTV</string>
+
+    <!-- Provisioning: a transient, DUMP-protected panel driven from a terminal. The operator is at
+         a keyboard, so the raw rejection reason is the most useful thing it can show. -->
+    <string name="provisioning_in_progress">Checking credentials…</string>
+    <string name="provisioning_complete">Setup complete</string>
+    <string name="provisioning_failed">Setup failed: %1$s</string>
+
+    <!-- Setup: two presentations, five internal states. Every state on the left of the divide is
+         fixed by the same action — run the setup script again from a computer — so telling them
+         apart on screen would only be telling the user about the state machine. The wording must
+         stay true for an install that holds a client id and a live session but no bearer, which is
+         why it says "no usable credentials" and not "not set up yet". -->
+    <string name="setup_needed_title">Setup needed</string>
+    <string name="setup_needed_body">This device has no usable X credentials, so it cannot fetch anything. Setup runs once, from a computer over ADB.</string>
+    <string name="setup_resume_hint">A previous setup was interrupted. Running the same command again picks up where it stopped.</string>
+    <string name="setup_scan">Scan for the full instructions</string>
+
+    <string name="setup_broken_title">Local data can\'t be read</string>
+    <string name="setup_broken_body">The encryption key is no longer valid. XTV stopped before making any network request. Clearing the local data and setting up again is the only way forward.</string>
+    <string name="setup_clear">Clear and start over</string>
+    <string name="setup_clear_failed">Clearing failed. Nothing was sent; try again or check device storage.</string>
 
     <!-- Home -->
-    <string name="home_resume_title">Continue the current reel</string>
-    <string name="home_resume_subtitle">%1$d of %2$d left   ·   no new charge</string>
-    <string name="home_build_new">Or build a new reel (this costs money)</string>
-    <string name="home_build_first">Build a reel</string>
-    <string name="home_open_grid">See the whole reel</string>
-    <string name="home_history">Fetch history</string>
-    <!-- X's meter counts X's own period, ending on cap_reset_day. The estimate counts a calendar
-         month. Two windows, so two sentences — they are never the same number. -->
-    <string name="home_spend_period_reset">%1$s this period · resets on the %2$s</string>
-    <string name="home_spend_period">%1$s this period</string>
-    <string name="home_spend_estimate">%1$s this month · upper-bound estimate · console.x.com is authoritative</string>
-    <!-- "en" gives English ordinals ("the 26th"); anything else prints a bare number and lets the
-         locale's own suffix live in home_spend_period_reset. Keyed to the string set, not the
-         system locale, because a device in an untranslated language resolves these English
-         strings while its locale still reads something else. -->
-    <string name="ordinal_style" translatable="false">en</string>
-    <string name="home_budget_exceeded">Monthly limit reached</string>
-    <string name="home_budget_exceeded_body">%1$s spent against this app\'s own %2$s limit for the month. It resets when the month does.</string>
-    <string name="home_budget_ok">Got it</string>
+    <string name="home_continue">Continue watching</string>
+    <string name="home_replay">Watch again from the start</string>
+    <plurals name="home_replay_sub">
+        <item quantity="one">%1$d video</item>
+        <item quantity="other">%1$d videos</item>
+    </plurals>
+    <string name="home_get_new">Get new videos</string>
+    <plurals name="home_all">
+        <item quantity="one">All %1$d</item>
+        <item quantity="other">All %1$d</item>
+    </plurals>
+    <string name="home_settings">Settings</string>
+    <string name="home_diagnostics">Diagnostics</string>
 
-    <!-- Reel sizes -->
+    <!-- Offers. Always these three sizes. The price is a range because the exact charge depends on
+         what X returns: the low end is the measured expectation, the high end is a conservative
+         upper bound, and the bill never exceeds it. -->
     <string name="size_short">Short</string>
     <string name="size_standard">Standard</string>
     <string name="size_long">Long</string>
-    <string name="size_estimate">about %1$d videos</string>
-    <string name="size_cost">up to %1$s</string>
+    <plurals name="offer_videos">
+        <item quantity="one">about %1$d video</item>
+        <item quantity="other">about %1$d videos</item>
+    </plurals>
+    <string name="offer_price_range">%1$s - %2$s</string>
 
     <!-- Exit -->
     <string name="exit_title">Leave X TV?</string>
-    <string name="exit_body">Press Exit to leave, or Cancel to keep watching.</string>
+    <string name="exit_body">Your place is saved.</string>
     <string name="exit_confirm">Exit</string>
     <string name="exit_cancel">Cancel</string>
 
-    <!-- Reel -->
-    <string name="reel_done_title">That\'s the reel</string>
-    <string name="reel_done_counts">played %1$d</string>
-    <string name="reel_done_skipped">   ·   skipped %1$d</string>
-    <string name="reel_done_failed">   ·   failed %1$d</string>
-    <string name="reel_done_hint">Press Back to return</string>
+    <!-- Player. Skipped items are deliberately not counted back at the viewer: they skipped them on
+         purpose. Failures are reported, because those were not their choice. -->
+    <string name="reel_done_title">That\'s all</string>
+    <plurals name="reel_done_played">
+        <item quantity="one">%1$d video played</item>
+        <item quantity="other">%1$d videos played</item>
+    </plurals>
+    <plurals name="reel_done_played_with_failures">
+        <item quantity="one">%1$d played · %2$d couldn\'t load</item>
+        <item quantity="other">%1$d played · %2$d couldn\'t load</item>
+    </plurals>
+    <string name="reel_done_hint">OK to watch again · BACK to go home</string>
     <string name="reel_empty">Nothing to play</string>
-    <string name="reel_failures">%1$d in a row failed to load</string>
-    <string name="reel_muted">muted</string>
+    <plurals name="reel_failures">
+        <item quantity="one">%1$d in a row couldn\'t load</item>
+        <item quantity="other">%1$d in a row couldn\'t load</item>
+    </plurals>
+    <string name="reel_checkpoint_warning">Playing on, but your place isn\'t being saved</string>
+    <string name="reel_partial_warning">This batch is incomplete — playing what arrived</string>
+    <string name="seek_back">−10s</string>
+    <string name="seek_forward">+10s</string>
 
     <!-- Grid -->
-    <string name="grid_count">%1$d in this reel</string>
+    <string name="grid_title">All videos</string>
+    <plurals name="grid_count">
+        <item quantity="one">%1$d video</item>
+        <item quantity="other">%1$d videos</item>
+    </plurals>
+    <string name="grid_next">Next</string>
+    <string name="grid_watched">Watched</string>
 
-    <!-- History -->
-    <string name="history_title">Fetch history</string>
-    <string name="history_empty">Nothing recorded yet.</string>
-    <string name="history_header">%1$s   ·   %2$d in the current reel</string>
+    <!-- Settings: the one screen where money belongs. -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_usage_label">X project usage</string>
+    <string name="settings_tile_posts">Post reads</string>
+    <string name="settings_tile_posts_value">%1$,d</string>
+    <string name="settings_tile_cost">Estimated cost</string>
+    <string name="settings_tile_reset">Resets</string>
+    <string name="settings_tile_reset_value">Day %1$d</string>
+    <string name="settings_usage_note">X\'s own reporting period, across the whole developer project — including anything else using these credentials.</string>
+    <string name="settings_usage_refresh">Refresh</string>
+    <string name="settings_reset_credentials">Reset credentials</string>
+    <string name="settings_reset_everything">Erase everything</string>
+    <string name="settings_reset_credentials_title">Reset credentials?</string>
+    <string name="settings_reset_credentials_body">Removes the credentials and the current session. Your videos are kept, so setting up the same account again restores them.</string>
+    <string name="settings_reset_everything_title">Erase everything?</string>
+    <string name="settings_reset_everything_body">Permanently removes the credentials, your videos and your place in them. This cannot be undone.</string>
+    <string name="settings_reset_confirm">Erase</string>
+    <string name="settings_reset_blocked">Something else is running. Try again in a moment.</string>
 
-    <!-- Status notes -->
-    <string name="note_building">Building…</string>
-    <string name="note_budget_short">Not enough budget left this month to build a reel</string>
-    <string name="note_no_videos">Read %1$d posts, but none carried video</string>
-    <string name="note_credits">Your X account is out of API credits: %1$s</string>
-    <string name="note_rate_limited">Rate limited — try again shortly</string>
-    <string name="note_upstream">The API response shape changed: %1$s</string>
-    <string name="note_transient">Temporary failure: %1$s</string>
+    <!-- The precise credential state, kept as one quiet line on the setup screen rather than five
+         paragraphs. It cannot live in diagnostics: that screen is only reachable from home, and
+         home is only reachable once the credentials are complete, so the line would forever read
+         "Complete". Which of the three values failed to take is genuinely useful to the operator
+         who has just run the script. The detail strings stand alone — prefixing them with a label
+         would be assembling a sentence from two resources, which this file does not do. -->
+    <string name="credential_state_client_id">Client ID missing</string>
+    <string name="credential_state_bearer">Bearer token missing</string>
+    <string name="credential_state_session">Session expired</string>
+    <string name="credential_state_provisioning">Setup unfinished</string>
+    <string name="credential_state_private_state">Local data unreadable</string>
 
-    <!-- Setup -->
-    <string name="setup_title">Setup needed</string>
-    <string name="setup_body">This install has no X API credentials yet, so it cannot fetch anything. XTV ships without them on purpose: X bills API usage to whoever owns the developer app, so everyone runs it on their own credentials and their own budget. All three values below are required.</string>
-    <string name="setup_body_bearer">This install is missing the app-only Bearer Token. XTV reads X\'s own usage meter with it, so the spend figure is X\'s count over X\'s billing period. Without it the app would have to guess, over a calendar month that does not line up with the period you are actually billed for. Re-run the command below with all three values.</string>
-    <string name="setup_readme">Full instructions: README.md</string>
+    <!-- Diagnostics: the log, and the one build fact that explains a price. -->
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostics_rate_card">Rate card %1$s</string>
+    <string name="diagnostics_log_label">Recent requests</string>
+    <string name="diagnostics_empty">Nothing recorded yet.</string>
+
+    <!-- Notices, in three weights.
+         Brief   — it will pass on its own; the message clears itself.
+         Standing— it will not pass until someone acts elsewhere; it stays.
+         Loud    — money left the account and the viewer has nothing to show for it. -->
+    <string name="notice_working">Getting videos…</string>
+    <string name="notice_busy">Still finishing the last request…</string>
+
+    <string name="notice_rate_limited">X is rate limiting — try again shortly</string>
+    <string name="notice_network">Couldn\'t confirm the result; nothing was retried automatically</string>
+    <string name="notice_offer_expired">That option expired — pick one of the current ones</string>
+    <string name="notice_state_changed">The account or the pricing changed — pick again</string>
+
+    <string name="notice_no_credits">The X project is out of API credits</string>
+    <string name="notice_upstream_changed">X changed its API — this version can\'t fetch for now</string>
+    <string name="notice_unexpected">That didn\'t finish. It may still have been charged.</string>
+
+    <string name="notice_no_videos_title">No videos this time</string>
+    <plurals name="notice_no_videos_body">
+        <item quantity="one">Read %1$d post and it carried no video. You were still charged.</item>
+        <item quantity="other">Read %1$d posts and none carried video. You were still charged.</item>
+    </plurals>
+    <string name="notice_interrupted_title">Request interrupted</string>
+    <string name="notice_interrupted_body">XTV can\'t tell whether it was billed, so it recorded the worst case: %1$s.</string>
+    <string name="notice_dismiss">OK</string>
+    <!-- A partial batch is deliberately not announced here. The player already says so over the
+         video it is playing, and being told the same thing twice for one event reads as two
+         problems. -->
+
 </resources>

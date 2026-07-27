@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android TV launcher banner (xhdpi 320x180). Placeholder geometry; replace with branded art later.
-     Deliberately bland: this sits on the living-room home row. -->
+<!--
+  The Android TV home-row banner, on the same geometry as the sibling apps (PH TV, 91 TV): a flat
+  #111111 field, the play mark in the app's own colour, and two white bars standing in for a
+  wordmark. Only the colour differs between them.
+
+  VectorRaster targets legacy compatibility rasterization; XTV is API 30+ and TV requires 320x180.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:width="320dp"
     android:height="180dp"
     android:viewportWidth="320"
-    android:viewportHeight="180">
+    android:viewportHeight="180"
+    tools:ignore="VectorRaster">
     <path
         android:fillColor="#FF111111"
         android:pathData="M0,0 H320 V180 H0 Z" />

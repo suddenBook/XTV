@@ -1,55 +1,113 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home_resume_title">继续当前的一卷</string>
-    <string name="home_resume_subtitle">还剩 %1$d / %2$d   ·   不产生新费用</string>
-    <string name="home_build_new">或者构建新的一卷（会花费）</string>
-    <string name="home_build_first">构建一卷</string>
-    <string name="home_open_grid">查看整卷</string>
-    <string name="home_history">卷获取历史</string>
-    <string name="home_spend_period_reset">本期已花费 %1$s · %2$s 日重置</string>
-    <string name="home_spend_period">本期已花费 %1$s</string>
-    <string name="home_spend_estimate">本月已花费 %1$s · 上限估算 · 以 console.x.com 为准</string>
-    <string name="ordinal_style" translatable="false">zh</string>
-    <string name="home_budget_exceeded">已超出本月上限</string>
-    <string name="home_budget_exceeded_body">已花费 %1$s，本应用自设的本月上限为 %2$s。下月初自动重置。</string>
-    <string name="home_budget_ok">知道了</string>
+    <string name="provisioning_in_progress">正在验证凭据…</string>
+    <string name="provisioning_complete">配置完成</string>
+    <string name="provisioning_failed">配置失败：%1$s</string>
+
+    <string name="setup_needed_title">需要配置</string>
+    <string name="setup_needed_body">这台设备没有可用的 X 凭据，取不到任何内容。配置在电脑上通过 ADB 一次性完成。</string>
+    <string name="setup_resume_hint">上次配置中断了。重新运行同一条命令会接着上次继续，不会重做已完成的部分。</string>
+    <string name="setup_scan">扫码查看完整步骤</string>
+
+    <string name="setup_broken_title">本地数据无法读取</string>
+    <string name="setup_broken_body">加密密钥已经失效。XTV 在发出任何网络请求之前就停下了。只能清除本地数据后重新配置。</string>
+    <string name="setup_clear">清除并重新开始</string>
+    <string name="setup_clear_failed">清除失败。没有发出任何请求；请重试或检查设备存储。</string>
+
+    <string name="home_continue">继续观看</string>
+    <string name="home_replay">从头再看一遍</string>
+    <plurals name="home_replay_sub">
+        <item quantity="other">%1$d 个视频</item>
+    </plurals>
+    <string name="home_get_new">获取新视频</string>
+    <plurals name="home_all">
+        <item quantity="other">全部 %1$d 个</item>
+    </plurals>
+    <string name="home_settings">设置</string>
+    <string name="home_diagnostics">诊断</string>
 
     <string name="size_short">短</string>
     <string name="size_standard">标准</string>
     <string name="size_long">长</string>
-    <string name="size_estimate">约 %1$d 条视频</string>
-    <string name="size_cost">最多 %1$s</string>
+    <plurals name="offer_videos">
+        <item quantity="other">约 %1$d 个视频</item>
+    </plurals>
+    <string name="offer_price_range">%1$s - %2$s</string>
 
     <string name="exit_title">退出 X TV？</string>
-    <string name="exit_body">按 退出 离开，或 取消 继续观看。</string>
+    <string name="exit_body">进度已经保存。</string>
     <string name="exit_confirm">退出</string>
     <string name="exit_cancel">取消</string>
 
-    <string name="reel_done_title">这一卷结束了</string>
-    <string name="reel_done_counts">播放 %1$d</string>
-    <string name="reel_done_skipped">   ·   跳过 %1$d</string>
-    <string name="reel_done_failed">   ·   失败 %1$d</string>
-    <string name="reel_done_hint">按 返回 回到首页</string>
+    <string name="reel_done_title">看完了</string>
+    <plurals name="reel_done_played">
+        <item quantity="other">播放了 %1$d 个视频</item>
+    </plurals>
+    <plurals name="reel_done_played_with_failures">
+        <item quantity="other">播放了 %1$d 个 · %2$d 个没能加载</item>
+    </plurals>
+    <string name="reel_done_hint">按 OK 重看 · 按 返回 回首页</string>
     <string name="reel_empty">没有可播放的内容</string>
-    <string name="reel_failures">连续 %1$d 条加载失败</string>
-    <string name="reel_muted">静音</string>
+    <plurals name="reel_failures">
+        <item quantity="other">连续 %1$d 个没能加载</item>
+    </plurals>
+    <string name="reel_checkpoint_warning">继续播放，但进度保存不了</string>
+    <string name="reel_partial_warning">这次没取全，正在播放已经取到的部分</string>
+    <string name="seek_back">−10 秒</string>
+    <string name="seek_forward">+10 秒</string>
 
-    <string name="grid_count">本卷共 %1$d 条</string>
+    <string name="grid_title">全部视频</string>
+    <plurals name="grid_count">
+        <item quantity="other">%1$d 个视频</item>
+    </plurals>
+    <string name="grid_next">下一个</string>
+    <string name="grid_watched">已看过</string>
 
-    <string name="history_title">卷获取历史</string>
-    <string name="history_empty">还没有记录。</string>
-    <string name="history_header">%1$s   ·   本卷 %2$d 条</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_usage_label">X 项目用量</string>
+    <string name="settings_tile_posts">已读帖子</string>
+    <string name="settings_tile_posts_value">%1$,d</string>
+    <string name="settings_tile_cost">预估费用</string>
+    <string name="settings_tile_reset">重置日</string>
+    <string name="settings_tile_reset_value">每月 %1$d 日</string>
+    <string name="settings_usage_note">这是 X 自己的统计周期、整个开发者项目的用量——包含其他工具使用同一套凭据产生的消耗。</string>
+    <string name="settings_usage_refresh">刷新</string>
+    <string name="settings_reset_credentials">重置凭据</string>
+    <string name="settings_reset_everything">清除全部数据</string>
+    <string name="settings_reset_credentials_title">重置凭据？</string>
+    <string name="settings_reset_credentials_body">移除凭据和当前会话。视频会保留，重新配置同一个账户就能恢复。</string>
+    <string name="settings_reset_everything_title">清除全部数据？</string>
+    <string name="settings_reset_everything_body">永久删除凭据、视频和播放进度。此操作无法撤销。</string>
+    <string name="settings_reset_confirm">清除</string>
+    <string name="settings_reset_blocked">有别的操作正在进行，稍后再试。</string>
 
-    <string name="note_building">正在构建…</string>
-    <string name="note_budget_short">本月预算不足，无法构建新的一卷</string>
-    <string name="note_no_videos">读了 %1$d 条推文，但其中没有视频</string>
-    <string name="note_credits">X 账户的 API 额度已用尽：%1$s</string>
-    <string name="note_rate_limited">被限流，稍后再试</string>
-    <string name="note_upstream">API 返回的数据格式变了：%1$s</string>
-    <string name="note_transient">暂时失败：%1$s</string>
+    <string name="diagnostics_title">诊断</string>
+    <string name="credential_state_client_id">缺少 Client ID</string>
+    <string name="credential_state_bearer">缺少 Bearer Token</string>
+    <string name="credential_state_session">会话已失效</string>
+    <string name="credential_state_provisioning">配置未完成</string>
+    <string name="credential_state_private_state">本地数据无法读取</string>
+    <string name="diagnostics_rate_card">费率表 %1$s</string>
+    <string name="diagnostics_log_label">最近的请求</string>
+    <string name="diagnostics_empty">还没有记录。</string>
 
-    <string name="setup_title">需要先配置</string>
-    <string name="setup_body">这个安装还没有 X API 凭据，所以拉不到任何内容。XTV 故意不内置凭据：X 按开发者应用的所有者计费，所以每个人都用自己的凭据、花自己的预算。下面三项都是必填的。</string>
-    <string name="setup_body_bearer">这个安装缺少 app-only Bearer Token。XTV 用它读取 X 自己的用量计数，这样显示的花费就是 X 按其计费周期统计的数字。没有它就只能自行估算，而估算按自然月计，与真正的计费周期并不一致。请带上三项凭据重新执行下面的命令。</string>
-    <string name="setup_readme">完整说明见 README.md</string>
+    <string name="notice_working">正在获取…</string>
+    <string name="notice_busy">上一个请求还没结束…</string>
+
+    <string name="notice_rate_limited">X 限流了，稍后再试</string>
+    <string name="notice_network">没能确认这次请求的结果，没有自动重试</string>
+    <string name="notice_offer_expired">这个选项已经失效，请重新选一个</string>
+    <string name="notice_state_changed">账户或价格变了，请重新选一个</string>
+
+    <string name="notice_no_credits">X 项目的 API 额度用完了</string>
+    <string name="notice_upstream_changed">X 改了接口，这个版本暂时取不到内容</string>
+    <string name="notice_unexpected">这次没能完成，费用可能已经产生。</string>
+
+    <string name="notice_no_videos_title">这次没取到视频</string>
+    <plurals name="notice_no_videos_body">
+        <item quantity="other">读了 %1$d 条帖子，里面没有视频。费用已经产生。</item>
+    </plurals>
+    <string name="notice_interrupted_title">请求被中断</string>
+    <string name="notice_interrupted_body">XTV 无法确认是否已经计费，按最坏情况记了 %1$s。</string>
+    <string name="notice_dismiss">知道了</string>
 </resources>

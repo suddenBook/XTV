@@ -1,5 +1,9 @@
 # XTV — Rate limits & account-safety on the user's MAIN account
 
+> **Status: RESEARCH SNAPSHOT / NON-AUTHORITATIVE FOR BILLING.** This document records dated source
+> reading. The X Developer Console remains the billing authority and its hard limit is mandatory;
+> the production rate card was subsequently checked against the Console.
+
 Research date: 2026-07-26. Method: static reading of maintained scraper source + primary docs + repo
 issues. No live requests to X were made. Every claim is tagged.
 

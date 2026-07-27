@@ -1,5 +1,9 @@
 # 05 — Logging into x.com in an Android TV WebView & harvesting the session cookie
 
+> **Status: ARCHIVED / REJECTED PATH.** XTV v1.1.0 removes the login WebView and does not harvest
+> cookies. OAuth authorization happens off-device with `xurl`; the TV accepts a staged candidate
+> only through the DUMP-protected provisioning activity over secure ADB.
+
 Research date: **2026-07-26**. Claim tags: `[VERIFIED src]` / `[LIKELY reasoning]` / `[UNKNOWN — needs live test]`.
 Live HTTP probes below were unauthenticated `curl` requests only (no login attempted).
 

@@ -3,8 +3,10 @@ package com.xtv.app.data
 import com.xtv.app.core.model.Author
 import com.xtv.app.core.model.MediaItem
 import com.xtv.app.core.model.MediaKind
+import com.xtv.app.core.model.PageFailure
 import com.xtv.app.core.model.PageResult
 import com.xtv.app.core.model.PageStats
+import com.xtv.app.core.model.PageWarning
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -23,7 +25,7 @@ import java.time.Instant
  * suspend: the whole thing is exercised from `src/test` against captured fixtures, which is the only
  * cheap place to test a parser whose upstream can change without warning.
  *
- * Everything here was derived from real captured responses (see docs/DECISION.md), including four
+ * Everything here was derived from real captured responses (see `docs/research/`), including four
  * things that are easy to get wrong and expensive to discover on a TV:
  *
  *  1. **Photos carry their URL in `media.url`, and only if `url` was requested in `media.fields`.**
@@ -49,26 +51,40 @@ object Normalizer {
 
         // RFC 7807 problem document. Check before anything else: these carry no `data`, so falling
         // through would produce a perfectly plausible empty page.
-        obj["status"]?.jsonPrimitive?.intOrNull?.let { status ->
+        (obj["status"] as? JsonPrimitive)?.intOrNull?.let { status ->
             if (status >= 400) {
-                val detail = obj["detail"]?.jsonPrimitive?.contentOrNull
-                    ?: obj["title"]?.jsonPrimitive?.contentOrNull
+                val detail = (obj["detail"] as? JsonPrimitive)?.contentOrNull
+                    ?: (obj["title"] as? JsonPrimitive)?.contentOrNull
                     ?: "HTTP $status"
-                return when (status) {
-                    401, 403 -> PageResult.AuthRequired
-                    402 -> PageResult.PaymentRequired(detail)
-                    429 -> PageResult.RateLimited(resetAtMs = null)
-                    else -> PageResult.Transient("HTTP $status: $detail")
-                }
+                return errorResult(status, detail)
             }
         }
 
-        val posts = obj["data"]?.asArrayOrNull().orEmpty()
+        val embeddedError = obj["errors"]?.asArrayOrNull()
+            ?.mapNotNull { it as? JsonObject }
+            ?.firstOrNull()
+            ?.let(::parseError)
+        val dataElement = obj["data"]
+        if (dataElement != null && dataElement !is JsonArray) {
+            return PageResult.UpstreamChanged("data is not an array")
+        }
+        if (dataElement == null) {
+            embeddedError?.let { return errorResult(it.status, it.detail) }
+            val explicitEmpty = (obj["meta"] as? JsonObject)
+                ?.get("result_count")
+                ?.let { it as? JsonPrimitive }
+                ?.intOrNull == 0
+            if (!explicitEmpty) return PageResult.UpstreamChanged("response carried neither data nor an explicit empty result")
+        }
+
+        val posts = dataElement.orEmpty()
         val includes = obj["includes"] as? JsonObject
-        val mediaByKey = (includes?.get("media")?.asArrayOrNull().orEmpty())
+        val returnedMedia = includes?.get("media")?.asArrayOrNull().orEmpty()
+        val returnedUsers = includes?.get("users")?.asArrayOrNull().orEmpty()
+        val mediaByKey = returnedMedia
             .mapNotNull { m -> (m as? JsonObject)?.let { it.str("media_key")?.to(it) } }
             .toMap()
-        val usersById = (includes?.get("users")?.asArrayOrNull().orEmpty())
+        val usersById = returnedUsers
             .mapNotNull { u -> (u as? JsonObject)?.let { it.str("id")?.to(it) } }
             .toMap()
 
@@ -76,7 +92,7 @@ object Normalizer {
         var recognised = 0
         var withoutMedia = 0
         var dropped = 0
-        var newestPostId: String? = null
+        var newestPostId: String? = (obj["meta"] as? JsonObject)?.str("newest_id")
 
         for (element in posts) {
             val post = element as? JsonObject ?: continue
@@ -108,16 +124,25 @@ object Normalizer {
             }
             val displayable = resolved.mapNotNull { media ->
                 val kind = KNOWN_KINDS[media.str("type")]
-                if (kind == null) { dropped++; null } else kind to media
+                if (kind == null) {
+                    dropped++
+                    null
+                } else {
+                    val url = media.displayUrl(kind)
+                    if (url == null) {
+                        dropped++
+                        null
+                    } else {
+                        Triple(kind, media, url)
+                    }
+                }
             }
             if (displayable.isEmpty()) {
                 withoutMedia++
                 continue
             }
 
-            displayable.forEachIndexed { index, (kind, media) ->
-                val url = media.displayUrl(kind)
-                if (url == null) { dropped++; return@forEachIndexed }
+            displayable.forEachIndexed { index, (kind, media, url) ->
                 items += MediaItem(
                     id = "$postId:${media.str("media_key")}",
                     kind = kind,
@@ -146,8 +171,37 @@ object Normalizer {
                 mediaExtracted = items.size,
                 postsWithoutMedia = withoutMedia,
                 mediaDropped = dropped,
+                usersReturned = returnedUsers.size,
+                mediaReturned = returnedMedia.size,
             ),
+            warnings = if (embeddedError == null) emptySet() else setOf(PageWarning.PARTIAL_ERRORS),
+            partialFailure = embeddedError?.let { errorFailure(it.status, it.detail) },
         )
+    }
+
+    private data class EmbeddedError(val status: Int?, val detail: String)
+
+    private fun parseError(error: JsonObject): EmbeddedError = EmbeddedError(
+        status = (error["status"] as? JsonPrimitive)?.intOrNull,
+        detail = (error["detail"] as? JsonPrimitive)?.contentOrNull
+            ?: (error["title"] as? JsonPrimitive)?.contentOrNull
+            ?: "response carried errors",
+    )
+
+    private fun errorResult(status: Int?, detail: String): PageResult = when (status) {
+        401, 403 -> PageResult.AuthRequired
+        402 -> PageResult.PaymentRequired(detail)
+        429 -> PageResult.RateLimited(resetAtMs = null)
+        in 500..599 -> PageResult.Transient("HTTP $status: $detail", requestPossiblyBilled = false)
+        else -> PageResult.UpstreamChanged("HTTP ${status ?: "?"}: $detail")
+    }
+
+    private fun errorFailure(status: Int?, detail: String): PageFailure = when (status) {
+        401, 403 -> PageFailure.AuthRequired
+        402 -> PageFailure.PaymentRequired(detail)
+        429 -> PageFailure.RateLimited(resetAtMs = null)
+        in 500..599 -> PageFailure.Transient("HTTP $status: $detail", requestPossiblyBilled = false)
+        else -> PageFailure.UpstreamChanged("HTTP ${status ?: "?"}: $detail")
     }
 
     /**

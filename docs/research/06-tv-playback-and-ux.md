@@ -1,5 +1,9 @@
 # XTV — Compose-for-TV: ambient channel playback & UX
 
+> **Status: RESEARCH SNAPSHOT.** The cited platform behavior informed v1.1.0, but the tested
+> `PlaybackCoordinator` state machine and current dependency lock are authoritative when this
+> document differs from code.
+
 Research date **2026-07-26**. Tags: `[VERIFIED <source>]` / `[LIKELY <reasoning>]` / `[UNKNOWN — needs live test]`.
 All version numbers below read from Google Maven / Maven Central `maven-metadata.xml` today, not from blog posts.
 

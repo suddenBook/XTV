@@ -1,82 +1,146 @@
-name: Build and Release XTV APK
+name: Verify and release XTV v1.3.0
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - v1.3.0
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-v1.3.0
+  cancel-in-progress: false
 
 jobs:
   release:
-    name: Build signed release APK
-    runs-on: ubuntu-latest
+    name: Verify and publish immutable signed APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production-release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
+      - name: Check out immutable tag
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require the exact v1.3.0 tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" != "tag" || "$GITHUB_REF_NAME" != "v1.3.0" ]]; then
+            echo "Releases are allowed only from the exact v1.3.0 tag." >&2
+            exit 1
+          fi
+          tag_commit="$(git rev-parse 'refs/tags/v1.3.0^{commit}')"
+          event_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          checked_out_commit="$(git rev-parse 'HEAD^{commit}')"
+          if [[ "$tag_commit" != "$event_commit" || "$tag_commit" != "$checked_out_commit" ]]; then
+            echo "v1.3.0 does not resolve to the checked-out commit." >&2
+            exit 1
+          fi
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
 
       - name: Set up JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "17.0.19+10"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
         with:
-          packages: "platform-tools"
+          cmdline-tools-version: "14742923"
+          packages: ""
 
       - name: Install Android platform and build-tools
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          install_pkg() {
-            local pkg="$1"
-            echo "Installing $pkg ..."
-            if sdkmanager "$pkg" >/dev/null; then return 0; fi
-            echo "Package $pkg not in the default channel; retrying preview channels ..."
-            sdkmanager --channel=3 "$pkg"
-          }
-          # compileSdk = 37 resolves to the minor-versioned platform package "android-37.0".
-          install_pkg "platforms;android-37.0"
-          install_pkg "build-tools;37.0.0"
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
         with:
           cache-provider: basic
 
-      # No X credentials are configured, deliberately. X bills API usage to the owner of the
-      # developer app, so a published build carrying anyone's client id would spend that person's
-      # credits for every user who installed it. The released APK therefore contains nothing; each
-      # user injects their own over adb on first run (see README).
-      - name: Run unit tests
+      - name: Validate operator and release scripts
         shell: bash
-        run: ./gradlew --no-daemon :app:testDebugUnitTest
+        run: |
+          set -euo pipefail
+          bash -n \
+            tools/provision.sh \
+            tools/phase0/probe.sh \
+            tools/inspect-release-apk.sh
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          ast.parse(Path("tools/phase0/sanitize_fixtures.py").read_text(encoding="utf-8"))
+          PY
 
-      - name: Read app version
+      - name: Verify release version
         id: version
         shell: bash
         run: |
           set -euo pipefail
           version_name="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' app/build.gradle.kts | head -n 1)"
           version_code="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' app/build.gradle.kts | head -n 1)"
-          if [[ -z "$version_name" || -z "$version_code" ]]; then
-            echo "Failed to read versionCode/versionName from app/build.gradle.kts" >&2
+          if [[ "$version_name" != "1.3.0" || "$version_code" != "5" ]]; then
+            echo "The v1.3.0 tag must contain versionName 1.3.0 and versionCode 5." >&2
             exit 1
           fi
           echo "name=$version_name" >> "$GITHUB_OUTPUT"
           echo "code=$version_code" >> "$GITHUB_OUTPUT"
           echo "tag=v$version_name" >> "$GITHUB_OUTPUT"
           echo "apk=XTV-v$version_name.apk" >> "$GITHUB_OUTPUT"
+          echo "mapping=XTV-v$version_name-r8-mapping.txt.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests and lint
+        shell: bash
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintRelease
+
+      - name: Build minified unsigned release
+        shell: bash
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Inspect generated configuration and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t unsigned_apks < <(
+            find app/build/outputs/apk/release -maxdepth 1 -type f -name '*release-unsigned.apk'
+          )
+          if [[ "${#unsigned_apks[@]}" -ne 1 ]]; then
+            echo "Expected exactly one unsigned release APK." >&2
+            exit 1
+          fi
+          unsigned_apk="${unsigned_apks[0]}"
+          build_tools="$ANDROID_HOME/build-tools/37.0.0"
+          bash tools/inspect-release-apk.sh "$unsigned_apk" "$build_tools"
+
+      - name: Package the R8 deobfuscation mapping
+        shell: bash
+        env:
+          MAPPING_NAME: ${{ steps.version.outputs.mapping }}
+        run: |
+          set -euo pipefail
+          mapping="app/build/outputs/mapping/release/mapping.txt"
+          [[ -s "$mapping" ]] || {
+            echo "The release R8 mapping is missing." >&2
+            exit 1
+          }
+          gzip -n -9 -c "$mapping" > "$MAPPING_NAME"
+          sha256sum "$MAPPING_NAME" > "$MAPPING_NAME.sha256"
 
       - name: Decode signing keystore
         id: signing
@@ -96,13 +160,10 @@ jobs:
           done
           keystore="$RUNNER_TEMP/release.keystore"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
           echo "keystore=$keystore" >> "$GITHUB_OUTPUT"
 
-      - name: Build unsigned release APK
-        shell: bash
-        run: ./gradlew --no-daemon :app:assembleRelease
-
-      - name: Align, sign, and verify APK
+      - name: Align, sign, verify, and checksum APK
         shell: bash
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -112,18 +173,16 @@ jobs:
           APK_NAME: ${{ steps.version.outputs.apk }}
         run: |
           set -euo pipefail
-          build_tools_version="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -n 1)"
-          if [[ -z "$build_tools_version" ]]; then
-            echo "No Android build-tools installation found" >&2
+          build_tools="$ANDROID_HOME/build-tools/37.0.0"
+          mapfile -t unsigned_apks < <(
+            find app/build/outputs/apk/release -maxdepth 1 -type f -name '*release-unsigned.apk'
+          )
+          if [[ "${#unsigned_apks[@]}" -ne 1 ]]; then
+            echo "Expected exactly one unsigned release APK." >&2
             exit 1
           fi
-          build_tools="$ANDROID_HOME/build-tools/$build_tools_version"
-          unsigned_apk="$(find app/build/outputs/apk/release -maxdepth 1 -name '*release-unsigned.apk' | head -n 1)"
-          if [[ -z "$unsigned_apk" ]]; then
-            echo "Unsigned release APK not found" >&2
-            exit 1
-          fi
-          "$build_tools/zipalign" -p -f 4 "$unsigned_apk" "$RUNNER_TEMP/app-release-aligned.apk"
+          unsigned_apk="${unsigned_apks[0]}"
+          "$build_tools/zipalign" -P 16 -f 4 "$unsigned_apk" "$RUNNER_TEMP/app-release-aligned.apk"
           "$build_tools/apksigner" sign \
             --ks "$KEYSTORE_PATH" \
             --ks-key-alias "$ANDROID_KEY_ALIAS" \
@@ -131,59 +190,83 @@ jobs:
             --key-pass env:ANDROID_KEY_PASSWORD \
             --out "$APK_NAME" \
             "$RUNNER_TEMP/app-release-aligned.apk"
+          "$build_tools/zipalign" -c -P 16 4 "$APK_NAME"
           "$build_tools/apksigner" verify --verbose --print-certs "$APK_NAME"
+          actual_signer="$(
+            "$build_tools/apksigner" verify --print-certs "$APK_NAME" |
+              sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
+          )"
+          expected_signer="9ebbd0a688de30aedfe6b98a32c16e3d3579733d3581bbbf4de240648233c10b"
+          if [[ "${actual_signer,,}" != "$expected_signer" ]]; then
+            echo "Release signer does not match the public XTV update lineage." >&2
+            exit 1
+          fi
+          sha256sum "$APK_NAME" > "$APK_NAME.sha256"
 
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v7
+      - name: Attest signed APK provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
-          name: ${{ steps.version.outputs.apk }}
-          path: ${{ steps.version.outputs.apk }}
+          subject-path: ${{ steps.version.outputs.apk }}
+
+      - name: Remove decoded signing keystore
+        if: always()
+        shell: bash
+        run: |
+          keystore="$RUNNER_TEMP/release.keystore"
+          if [[ -f "$keystore" ]]; then
+            shred -u "$keystore" 2>/dev/null || rm -f -- "$keystore"
+          fi
+
+      - name: Upload verified workflow artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: XTV-v1.3.0
+          path: |
+            ${{ steps.version.outputs.apk }}
+            ${{ steps.version.outputs.apk }}.sha256
+            ${{ steps.version.outputs.mapping }}
+            ${{ steps.version.outputs.mapping }}.sha256
           if-no-files-found: error
 
       - name: Write release notes
         shell: bash
         env:
           APK_NAME: ${{ steps.version.outputs.apk }}
+          MAPPING_NAME: ${{ steps.version.outputs.mapping }}
         run: |
-          cat > release-notes.md <<EOF
-          Automated release for ${{ steps.version.outputs.tag }} (X TV).
+          set -euo pipefail
+          commit="$(git rev-parse 'HEAD^{commit}')"
+          {
+            printf 'XTV v1.3.0 (version code 5)\n\n'
+            printf -- '- Commit: `%s`\n' "$commit"
+            printf -- '- APK: `%s`\n' "$APK_NAME"
+            printf -- '- SHA-256: see `%s.sha256`\n' "$APK_NAME"
+            printf -- '- R8 mapping: `%s` (maintainer crash deobfuscation)\n' "$MAPPING_NAME"
+            printf -- '- Signer certificate SHA-256: `9ebbd0a688de30aedfe6b98a32c16e3d3579733d3581bbbf4de240648233c10b`\n'
+            printf -- '- Provenance: `gh attestation verify %s --repo %s`\n\n' "$APK_NAME" "$GITHUB_REPOSITORY"
+            printf 'The APK contains no X credentials. Provision only over USB or authenticated Wireless Debugging/TLS using `tools/provision.sh`; plaintext legacy `adb tcpip 5555` is rejected.\n\n'
+            printf 'Every timeline request is a paid request, quoted before you accept it. The X Developer Console is the only billing control and must have its own hard limit configured before use.\n'
+          } > release-notes.md
 
-          - Version name: ${{ steps.version.outputs.name }}
-          - Version code: ${{ steps.version.outputs.code }}
-          - Commit: ${{ github.sha }}
-          - APK: ${APK_NAME}
-
-          This APK contains **no X API credentials**. After installing, supply your own:
-
-          \`\`\`
-          adb shell am start -n com.xtv.app/.MainActivity --es client_id <your client id> --es refresh_token <your refresh token> --es bearer <app-only bearer token>
-          \`\`\`
-
-          All three are required. X bills API usage to the owner of the developer app, so everyone
-          runs XTV on their own credentials and their own budget; the app-only bearer is what lets it
-          show X's own spend figure for X's own billing period rather than guessing over a calendar
-          month. See README.md for how to obtain all three values.
-          EOF
-
-      - name: Create or update GitHub release
+      - name: Create non-overwriting GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           APK_NAME: ${{ steps.version.outputs.apk }}
+          MAPPING_NAME: ${{ steps.version.outputs.mapping }}
         run: |
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" \
-              --target "$GITHUB_SHA" \
-              --title "$TAG" \
-              --notes-file release-notes.md \
-              --latest
-            gh release upload "$TAG" "$APK_NAME" --clobber
-          else
-            gh release create "$TAG" "$APK_NAME" \
-              --target "$GITHUB_SHA" \
-              --title "$TAG" \
-              --notes-file release-notes.md \
-              --latest
+            echo "Release $TAG already exists; this workflow never edits or overwrites it." >&2
+            exit 1
           fi
+          gh release create "$TAG" \
+            "$APK_NAME" \
+            "$APK_NAME.sha256" \
+            "$MAPPING_NAME" \
+            "$MAPPING_NAME.sha256" \
+            --verify-tag \
+            --title "$TAG" \
+            --notes-file release-notes.md \
+            --latest

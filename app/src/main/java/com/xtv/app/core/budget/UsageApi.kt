@@ -16,10 +16,9 @@ import okhttp3.Request
  * X's own consumption meter — the authoritative alternative to counting locally.
  *
  * `GET /2/usage/tweets` returns a flat `data.project_usage` count for the current cap period. It does
- * **not** report money: X publishes no billing, balance, or credits endpoint, so dollars are still
- * derived by multiplying by the published per-post price. What this buys is that the *count* comes
- * from X rather than from our own tally, which catches any drift between the two — X dedupes repeat
- * reads of the same resource within a UTC day, so a local tally is an upper bound.
+ * **not** report money: X publishes no billing, balance, or credits endpoint. The app therefore
+ * presents this count separately from its resource-based local charge estimate. What this buys is
+ * that the *Post count* comes from X rather than from our own tally.
  *
  * Requires **app-only** auth: an OAuth 2.0 user token is rejected outright with
  * `unsupported-authentication`. The bearer for that is the one shown on the app's Keys and tokens
@@ -50,14 +49,27 @@ object UsageApi {
      *
      * It is also *project*-wide: anything else using the same credentials — a script, a CLI — is
      * included. That makes it the real bill rather than this app's share of it, which is the point,
-     * but it is also why it must never drive the local spending ceiling. See [SpendGuard.State].
+     * but it is also why it must never drive the local spending ceiling.
      *
      * Failures are recorded to [Diagnostics] rather than swallowed. With the bearer now mandatory,
      * the likeliest fault is a *present but wrong* one — the token's literal `%2F` and `%3D` invite
      * URL-decoding, which yields a 401 — and that passes every presence check the app can make. An
      * unexplained fall back to the estimate wording would be the only symptom.
      */
-    suspend fun postsThisPeriod(appOnlyBearer: String): Usage? = withContext(Dispatchers.IO) {
+    sealed interface LookupResult {
+        data class Success(val usage: Usage) : LookupResult
+        data object InvalidAuth : LookupResult
+        data object Unavailable : LookupResult
+    }
+
+    suspend fun postsThisPeriod(appOnlyBearer: String): Usage? =
+        (lookup(appOnlyBearer) as? LookupResult.Success)?.usage
+
+    /**
+     * Distinguishes a definitive credential rejection from transport, server, and schema failures.
+     * Provisioning must not tell an operator to replace a valid bearer merely because X is down.
+     */
+    suspend fun lookup(appOnlyBearer: String): LookupResult = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
                 .url("https://api.x.com/2/usage/tweets")
@@ -66,20 +78,27 @@ object UsageApi {
                 .header("Authorization", "Bearer $appOnlyBearer")
                 .build()
             client.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) {
+                    Diagnostics.record("usage", "authorization rejected")
+                    return@use LookupResult.InvalidAuth
+                }
                 if (!response.isSuccessful) {
                     Diagnostics.record("usage", "HTTP ${response.code} — spend figure is an estimate")
-                    return@use null
+                    return@use LookupResult.Unavailable
                 }
-                val data = json.parseToJsonElement(response.body?.string().orEmpty())
-                    .jsonObject["data"]?.jsonObject ?: return@use null
+                val data = json.parseToJsonElement(response.body.string())
+                    .jsonObject["data"]?.jsonObject
+                    ?: return@use LookupResult.Unavailable
                 val used = data["project_usage"]?.jsonPrimitive?.content?.toIntOrNull()
-                    ?: return@use null
-                Usage(
-                    posts = used,
-                    capPosts = data["project_cap"]?.jsonPrimitive?.content?.toIntOrNull(),
-                    // A day outside 1..31 would render as "the 0th". Treat it as absent instead.
-                    resetDay = data["cap_reset_day"]?.jsonPrimitive?.content?.toIntOrNull()
-                        ?.takeIf { it in 1..31 },
+                    ?.takeIf { it >= 0 }
+                    ?: return@use LookupResult.Unavailable
+                LookupResult.Success(
+                    Usage(
+                        posts = used,
+                        // A day outside 1..31 would render as "the 0th". Treat it as absent instead.
+                        resetDay = data["cap_reset_day"]?.jsonPrimitive?.content?.toIntOrNull()
+                            ?.takeIf { it in 1..31 },
+                    ),
                 )
             }
         } catch (e: CancellationException) {
@@ -87,12 +106,12 @@ object UsageApi {
             throw e
         } catch (e: IOException) {
             Diagnostics.record("usage", "unreachable (${e.javaClass.simpleName})")
-            null
+            LookupResult.Unavailable
         } catch (e: Exception) {
             Diagnostics.record("usage", "unreadable response (${e.javaClass.simpleName})")
-            null
+            LookupResult.Unavailable
         }
     }
 
-    data class Usage(val posts: Int, val capPosts: Int?, val resetDay: Int?)
+    data class Usage(val posts: Int, val resetDay: Int?)
 }

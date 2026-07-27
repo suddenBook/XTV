@@ -11,6 +11,19 @@ data class Author(
 enum class MediaKind { PHOTO, VIDEO, GIF }
 
 /**
+ * What a reel is made of: the motion content, in timeline order.
+ *
+ * Stills parse (the Normalizer stays faithful to the API) but are not reel material — this is a
+ * watch-it-through reel, not a slideshow, and an eight-second photo between two videos breaks both
+ * the rhythm and the audio.
+ *
+ * Note the cost consequence: billing is per *post read*, not per usable item, so dropping photos
+ * makes nothing cheaper — it slightly raises the effective price of what remains.
+ */
+fun List<MediaItem>.motionOnly(): List<MediaItem> =
+    filter { it.kind == MediaKind.VIDEO || it.kind == MediaKind.GIF }
+
+/**
  * One displayable thing. The reel, the grid and the history all index the same flat list of these,
  * so a post carrying four photos becomes four items rather than one item you have to click into.
  *
@@ -54,13 +67,43 @@ data class PageStats(
     val mediaExtracted: Int,
     val postsWithoutMedia: Int,
     val mediaDropped: Int,
+    /** Billable resources returned in `includes`, independent of whether they were displayable. */
+    val usersReturned: Int = 0,
+    val mediaReturned: Int = 0,
 ) {
     val shapeDrift: Boolean get() = postsRecognised < postsSeen
-    val mediaDensity: Float get() = if (postsSeen == 0) 0f else (postsSeen - postsWithoutMedia).toFloat() / postsSeen
+
+    /**
+     * Share of read Posts that carried anything displayable.
+     *
+     * Read by the parser tests as a cross-check against the independent Phase 0 probe, which
+     * measured 70.7% on the same captured page. It is a parse statistic, not a price: billing is
+     * per Post read regardless of what came back.
+     */
+    val mediaDensity: Float
+        get() = if (postsSeen == 0) 0f else (postsSeen - postsWithoutMedia).toFloat() / postsSeen
+}
+
+enum class PageWarning {
+    PARTIAL_ERRORS,
+    PARTIAL_PAGE,
+    SERVER_OVERDELIVERY,
+}
+
+sealed interface PageFailure {
+    data object AuthRequired : PageFailure
+    data class RateLimited(val resetAtMs: Long?) : PageFailure
+    data class PaymentRequired(val detail: String) : PageFailure
+    data class UpstreamChanged(val detail: String) : PageFailure
+    data class Transient(
+        val cause: String,
+        /** False for a known HTTP failure that returned no resources. */
+        val requestPossiblyBilled: Boolean = true,
+    ) : PageFailure
 }
 
 /**
- * Outcome of asking a [com.xtv.app.core.source.TimelineSource] for a page.
+ * Outcome of asking the X API reader for a page.
  *
  * The error cases are deliberately semantic rather than transport-shaped: callers decide what to
  * show, not how to read a status code. In particular [PaymentRequired] is its own case because X
@@ -73,11 +116,17 @@ sealed interface PageResult {
         val newestPostId: String?,
         val postsRead: Int,
         val stats: PageStats,
+        val warnings: Set<PageWarning> = emptySet(),
+        /** A later-page/partial-response failure after [postsRead] resources were already returned. */
+        val partialFailure: PageFailure? = null,
     ) : PageResult
 
     data object AuthRequired : PageResult
     data class RateLimited(val resetAtMs: Long?) : PageResult
     data class PaymentRequired(val detail: String) : PageResult
     data class UpstreamChanged(val detail: String) : PageResult
-    data class Transient(val cause: String) : PageResult
+    data class Transient(
+        val cause: String,
+        val requestPossiblyBilled: Boolean = true,
+    ) : PageResult
 }

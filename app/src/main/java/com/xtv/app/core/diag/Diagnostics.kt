@@ -1,8 +1,6 @@
 package com.xtv.app.core.diag
 
-import android.content.Context
 import android.util.Log
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -11,7 +9,7 @@ import java.util.concurrent.ConcurrentLinkedDeque
 private const val TAG = "XTV-DIAG"
 
 /**
- * An in-memory ring of what the app recently did, plus a way to get a raw response off the device.
+ * An in-memory ring of what the app recently did.
  *
  * A TV has no devtools. When a reel comes back empty the cause could be rate limiting, an exhausted
  * prepaid balance, a dead session, or an upstream shape change — and all four look identical from
@@ -42,21 +40,4 @@ object Diagnostics {
     }
 
     fun snapshot(): List<Entry> = entries.toList()
-
-    /**
-     * Writes the last raw response body to app-private external storage for `adb pull`.
-     *
-     * App-private (`getExternalFilesDir`) rather than shared storage: this is somebody's timeline,
-     * and a debug convenience should not leave account media sitting in the gallery. Overwrites
-     * rather than accumulating, for the same reason.
-     */
-    fun dumpBody(context: Context, body: String): String? = try {
-        val file = File(context.getExternalFilesDir(null), "last-response.json")
-        file.writeText(body)
-        record("dump", "wrote ${body.length}B to ${file.absolutePath}")
-        file.absolutePath
-    } catch (t: Throwable) {
-        Log.w(TAG, "dump failed: ${t.message}")
-        null
-    }
 }

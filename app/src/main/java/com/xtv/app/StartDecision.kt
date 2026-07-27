@@ -7,14 +7,13 @@ package com.xtv.app
  * client id and a live session, so telling that user "this install has no credentials yet" would be
  * both false and unactionable.
  */
-enum class MissingCredential { CLIENT_ID, BEARER }
+enum class MissingCredential { CLIENT_ID, BEARER, SESSION, PROVISIONING, PRIVATE_STATE }
 
 /** Where a launch lands. */
 sealed interface Start {
     data class NeedsSetup(val missing: MissingCredential) : Start
     /** Offline fixture playback: no credentials, no token, no spend. */
     data class Fixture(val name: String) : Start
-    data object NeedsLogin : Start
     data object Home : Start
 }
 
@@ -39,6 +38,6 @@ fun decideStart(
     fixture != null -> Start.Fixture(fixture)
     clientId.isNullOrBlank() -> Start.NeedsSetup(MissingCredential.CLIENT_ID)
     bearer.isNullOrBlank() -> Start.NeedsSetup(MissingCredential.BEARER)
-    !hasSession -> Start.NeedsLogin
+    !hasSession -> Start.NeedsSetup(MissingCredential.SESSION)
     else -> Start.Home
 }

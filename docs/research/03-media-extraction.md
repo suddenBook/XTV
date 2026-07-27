@@ -1,5 +1,9 @@
 # XTV — Extracting playable/displayable media from an X tweet object
 
+> **Status: RESEARCH SNAPSHOT.** Media-shape observations are useful background, but only behavior
+> covered by current fixtures and tests is relied on by v1.1.0. The production rate card was
+> subsequently checked against the Developer Console.
+
 Researched 2026-07-26. Evidence labels: **[V]** = verified against a primary source (source code / typed
 schema / my own live HTTP probe), **[L]** = likely / inferred with stated reasoning, **[U]** = unknown,
 needs a live authenticated test.

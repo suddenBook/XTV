@@ -1,5 +1,9 @@
 # XTV — X GraphQL timeline endpoints & pagination
 
+> **Status: ARCHIVED / REJECTED PATH.** These web GraphQL notes are historical evidence, not the
+> v1.1.0 endpoint contract. XTV uses the official API; none of the query IDs or feature flags below
+> should be copied into production code.
+
 Research date: **2026-07-26**. Method: static reading of maintained scraper source, X's own daily-scraped
 bundle dump, and official docs. No live X requests were made.
 
