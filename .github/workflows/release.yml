@@ -226,7 +226,7 @@ jobs:
           "$build_tools/apksigner" verify --verbose --print-certs "$APK_NAME"
           actual_signer="$(
             "$build_tools/apksigner" verify --print-certs "$APK_NAME" |
-              sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
+              awk '/certificate SHA-256 digest:/ { print $NF; exit }'
           )"
           expected_signer="9ebbd0a688de30aedfe6b98a32c16e3d3579733d3581bbbf4de240648233c10b"
           if [[ "${actual_signer,,}" != "$expected_signer" ]]; then
