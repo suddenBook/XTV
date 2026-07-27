@@ -115,17 +115,21 @@ Note the exact serial shown by `adb devices` — you will pass it in the next st
 
 ## Step 4 — Install the APK
 
-Download the APK from [Releases](https://github.com/suddenBook/XTV/releases) and install it:
+Download the newest APK from [Releases](https://github.com/suddenBook/XTV/releases) and install it,
+substituting the version you downloaded:
 
 ```bash
-adb -s <serial> install -r XTV-v1.3.0.apk
+adb -s <serial> install -r XTV-<version>.apk
 ```
 
-Optionally, verify the release really came from this repository's build workflow:
+Optionally, verify it really came from this repository's build workflow rather than someone else:
 
 ```bash
-gh attestation verify XTV-v1.3.0.apk --repo suddenBook/XTV
+gh attestation verify XTV-<version>.apk --repo suddenBook/XTV
 ```
+
+No published build yet? Build one yourself — see [Building from source](#building-from-source) —
+and install `app/build/outputs/apk/debug/app-debug.apk` instead.
 
 Opening the app now shows **"Setup needed"** with a QR code. That is expected — it has no
 credentials yet.
