@@ -192,6 +192,14 @@ data class ProvisionCandidate(
      */
     val verifiedAccountId: String? = null,
     /**
+     * A billable `/2/users/me` request may have left the device.
+     *
+     * Journaled before dispatch, because a null result, a crash, or a lost response are otherwise
+     * indistinguishable from never having asked. Without it a retry silently pays for the lookup a
+     * second time, and a candidate mid-recovery looks discardable.
+     */
+    val accountLookupDispatched: Boolean = false,
+    /**
      * Fingerprint of a refresh token whose exchange was durably marked before network dispatch.
      *
      * If no rotated response was persisted, retrying that token could spend a one-time refresh
@@ -244,7 +252,12 @@ object StateEnvelopeCodec {
      */
     fun decode(bytes: ByteArray): PrivateStateV2 {
         val root = json.parseToJsonElement(bytes.decodeToString()).jsonObject
-        val version = root["schemaVersion"]?.jsonPrimitive?.int ?: PrivateStateV2.SCHEMA_VERSION
+        // No default. Assuming the current schema for a document that does not declare one would
+        // read a truncated envelope as an empty, valid, fresh install — every field here has a
+        // default — which is precisely the "unreadable is not the same as absent" distinction the
+        // store exists to preserve.
+        val version = root["schemaVersion"]?.jsonPrimitive?.int
+            ?: error("Private state envelope declares no schema version")
         // Explicit serializers, never the reified form: the reified overload resolves through
         // `serializer(typeOf<T>())`, which is a reflective lookup that only fails once R8 has run.
         val decoded = when (version) {
@@ -398,10 +411,13 @@ private fun PrivateStateV2.validateSemantics() {
         require(it.verifiedAccountId == null || it.verifiedAccountId.isNotBlank()) {
             "verified account id is blank"
         }
-        // A verified account is only reachable through a rotated session, so one without the other
-        // is a journal that could not have been written by this code.
+        // A verified account is only reachable through a rotated session and a dispatched lookup,
+        // so either one missing is a journal this code could not have written.
         require(it.verifiedAccountId == null || it.rotatedSession != null) {
             "verified account has no rotated session"
+        }
+        require(it.verifiedAccountId == null || it.accountLookupDispatched) {
+            "verified account has no dispatched lookup"
         }
         require(it.exchangeAttemptFingerprint == null || it.exchangeAttemptFingerprint.isSha256()) {
             "exchange-attempt fingerprint is invalid"

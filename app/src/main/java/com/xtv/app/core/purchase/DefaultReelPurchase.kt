@@ -38,7 +38,10 @@ class DefaultReelPurchase(
     override val state: StateFlow<PurchaseSnapshot> = _state.asStateFlow()
 
     init {
-        applicationScope.launch { initializeFromLocalState() }
+        // Through the same claim an explicit reload takes, not a bare launch. Both run on the
+        // default dispatcher, so an unclaimed initial read can otherwise finish after a reload
+        // triggered by provisioning and publish the older state over the newer one.
+        dispatchLocalReload()
     }
 
     override fun dispatch(command: PurchaseCommand): DispatchResult = when (command) {

@@ -157,6 +157,10 @@ class ProvisioningCoordinatorTest {
         assertEquals("client", state.credentials?.clientId)
         assertEquals("rotated", state.provisionCandidate?.rotatedSession?.refreshToken)
         assertNull(state.provisionCandidate?.verifiedAccountId)
+        // The lookup left the device even though it resolved nothing. That has to be on the record
+        // before the request, not after it succeeds, or an unresolved attempt is indistinguishable
+        // from never having asked.
+        assertEquals(true, state.provisionCandidate?.accountLookupDispatched)
     }
 
     @Test
@@ -191,6 +195,38 @@ class ProvisioningCoordinatorTest {
             assertEquals(2, resolverCalls)
             assertNull(coordinator.state().provisionCandidate)
         }
+
+    /**
+     * A rejected token must not throw away a candidate whose billable lookup already went out.
+     *
+     * The discard test used to be "no lookup has *completed*", which is the wrong question: a
+     * lookup dispatched and never resolved is exactly the state that needs keeping.
+     */
+    @Test
+    fun `a dispatched lookup survives a rejected replacement token`() = runBlocking {
+        val initial = PrivateStateV2(
+            provisionCandidate = com.xtv.app.core.storage.ProvisionCandidate(
+                requestId = "interrupted",
+                credentials = ProvisionedCredentials("client", "bearer"),
+                suppliedRefreshToken = "stale-source",
+                sourceRefreshFingerprint = fingerprint("first-source"),
+                accountLookupDispatched = true,
+            ),
+        )
+        val coordinator = coordinator(
+            initial,
+            exchange = FakeExchange(result = RefreshTokenExchangeResult.Rejected),
+        )
+
+        val result = coordinator.provision(
+            ProvisioningRequest("new-request", "client", "other-source", "bearer"),
+        )
+
+        assertTrue(result is ProvisioningResult.Rejected)
+        val candidate = coordinator.state().provisionCandidate
+        assertEquals("new-request", candidate?.requestId)
+        assertEquals(true, candidate?.accountLookupDispatched)
+    }
 
     @Test
     fun `renewed source replaces a same-project recovery candidate`() = runBlocking {

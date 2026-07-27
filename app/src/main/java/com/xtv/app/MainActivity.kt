@@ -306,7 +306,17 @@ class MainActivity : ComponentActivity() {
                                     screen = Screen.NeedsSetup(MissingCredential.PRIVATE_STATE)
                                 else -> notice = Notices.of(operation.problem)
                             }
-                            graph.purchases.dispatch(PurchaseCommand.Acknowledge(operation.id))
+                            // A storage failure is deliberately not acknowledged. Acknowledging
+                            // clears the terminal and republishes Idle, so if storage recovered in
+                            // between it would report a working, idle app while a possibly-paid
+                            // request still sat in the journal — and skip the recovery pass that
+                            // exists to resolve exactly that. Reloading local state is what clears
+                            // it, and that reconciles first.
+                            if (operation.problem != PurchaseProblem.StorageUnavailable) {
+                                graph.purchases.dispatch(
+                                    PurchaseCommand.Acknowledge(operation.id),
+                                )
+                            }
                         }
                         is PurchaseOperation.Interrupted -> {
                             notice = Notices.interrupted(

@@ -142,8 +142,9 @@ class ProvisioningCoordinator(
         }
 
         // A same-source retry resumes its rotated token. An independently renewed source token may
-        // replace an ambiguous candidate only inside the same developer project; its accumulated
-        // billable account lookups are carried forward, while account verification starts over.
+        // replace an ambiguous candidate only inside the same developer project; whether a billable
+        // account lookup already left the device is carried forward, while account verification
+        // itself starts over.
         val existingCandidate = initial.provisionCandidate
         val resumable = existingCandidate?.takeIf {
             it.credentials.clientId == clean.clientId &&
@@ -194,6 +195,9 @@ class ProvisioningCoordinator(
                             credentials = credentials,
                             suppliedRefreshToken = clean.refreshToken,
                             sourceRefreshFingerprint = sourceFingerprint,
+                            // Verification restarts, but a lookup that already left the device
+                            // stays on the record: the replacement must not look discardable.
+                            accountLookupDispatched = replacement.accountLookupDispatched,
                         )
                         else -> ProvisionCandidate(
                             requestId = clean.requestId,
@@ -319,9 +323,11 @@ class ProvisioningCoordinator(
                 )
             }
             RefreshTokenExchangeResult.Rejected -> {
-                // Nothing was rotated and no billable `/users/me` has completed, so there is no
-                // durable exposure to preserve and the candidate can simply be dropped.
-                if (existing == null && candidate.verifiedAccountId == null) {
+                // Nothing was rotated and no billable `/users/me` was ever dispatched, so there is
+                // no durable exposure to preserve and the candidate can simply be dropped. A
+                // *completed* lookup is the wrong test here: one that was dispatched and never
+                // resolved is exactly the case that has to be kept for recovery.
+                if (existing == null && !candidate.accountLookupDispatched) {
                     val discarded = rejectAndDiscard(
                         request.requestId,
                         ProvisioningResult.Reason.TOKEN_REJECTED,
@@ -407,18 +413,43 @@ class ProvisioningCoordinator(
     }
 
     /**
-     * Resolves `/2/users/me` once and journals the result.
+     * Resolves `/2/users/me` and journals both the attempt and the result.
      *
-     * The journal is what makes this resumable: a process death after the billable lookup returns
-     * must not pay for a second one. It used to also reserve the charge against a local monthly
-     * ceiling and refuse provisioning outright when that ceiling was reached — which could leave an
-     * operator unable to set up their own device over money the Developer Console had already
-     * agreed to.
+     * The dispatch is marked *before* the request leaves, not only after it succeeds. A null
+     * result, a thrown exception and a process death mid-flight are otherwise indistinguishable
+     * from never having asked, and that ambiguity is what decides whether a later retry can throw
+     * the candidate away or has to keep it for recovery.
+     *
+     * This used to be a monetary reservation checked against a local monthly ceiling, which could
+     * refuse to provision a device over money the Developer Console had already agreed to. The
+     * ceiling is gone; the pre-dispatch journal entry is not, because it was never really about
+     * the money.
      */
     private suspend fun resolveAndJournalAccount(
         requestId: String,
         accessToken: String,
     ): AccountPreparation {
+        try {
+            var marked = false
+            val afterMark = privateState.update { state ->
+                val candidate = state.provisionCandidate
+                if (candidate?.requestId != requestId) {
+                    state
+                } else {
+                    marked = true
+                    state.copy(
+                        provisionCandidate = candidate.copy(accountLookupDispatched = true),
+                    )
+                }
+            }
+            if (!marked || afterMark.provisionCandidate?.requestId != requestId) {
+                return AccountPreparation.Failed(ProvisioningResult.Reason.SUPERSEDED)
+            }
+        } catch (failure: Throwable) {
+            failure.rethrowCancellation()
+            return AccountPreparation.Failed(ProvisioningResult.Reason.STORAGE_UNAVAILABLE)
+        }
+
         val resolved = try {
             accountResolver.resolve(accessToken)
         } catch (failure: Throwable) {

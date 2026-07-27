@@ -49,7 +49,7 @@ object UsageApi {
      *
      * It is also *project*-wide: anything else using the same credentials — a script, a CLI — is
      * included. That makes it the real bill rather than this app's share of it, which is the point,
-     * but it is also why it must never drive the local spending ceiling.
+     * but it is also why it must never be presented as XTV's own usage.
      *
      * Failures are recorded to [Diagnostics] rather than swallowed. With the bearer now mandatory,
      * the likeliest fault is a *present but wrong* one — the token's literal `%2F` and `%3D` invite
